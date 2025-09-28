@@ -99,7 +99,7 @@ impl fmt::Display for ErrorRepr {
                 write!(f, "expected {expected:?}, found {found:?}")
             }
             Self::UnexpectedMultiple { allowed, found } => {
-                write!(f, "expected ")?;
+                write!(f, "expected {{ ")?;
                 for (i, r) in (*allowed).iter().enumerate() {
                     if i + 1 != allowed.len() {
                         write!(f, "{r:?} | ")?
@@ -107,7 +107,7 @@ impl fmt::Display for ErrorRepr {
                         write!(f, "{r:?} ")?
                     }
                 }
-                write!(f, "found {found:?}")
+                write!(f, "}} found {found:?}")
             }
             Self::ExpectedExpression { found } => {
                 write!(f, "expected an expression, found {found:?}")
@@ -129,6 +129,7 @@ impl fmt::Display for ParserError {
 impl Error for ParserError {}
 
 #[derive(Debug, Clone)]
+#[expect(dead_code)]
 pub enum Expr<'src> {
     Number(&'src str),
     String(&'src str),
@@ -231,6 +232,7 @@ impl<'src> Parser<'src> {
 
                 match new_next.repr {
                     TokenRepr::Mult | TokenRepr::Div => {
+                        self.position += 1;
                         self.try_parse_mult_expression(left, new_next.repr.into(), ending)
                     }
                     TokenRepr::Plus | TokenRepr::Minus => {
@@ -254,6 +256,12 @@ impl<'src> Parser<'src> {
                     )),
                 }
             }
+
+            TokenRepr::LParen | TokenRepr::LAngle | TokenRepr::LBracket | TokenRepr::LFigure => {
+                let expr = Expr::binop(left, oper, self.try_parse_paren_expr(next.repr)?);
+                self.try_parse_chain(expr, ending)
+            }
+
             _ => Err(ParserError::unexpected_multiple(
                 &[TokenRepr::String, TokenRepr::Number],
                 next,
@@ -291,6 +299,7 @@ impl<'src> Parser<'src> {
                     self.try_parse_expr(ending)?,
                 ))
             }
+
             TokenRepr::Div | TokenRepr::Mult => {
                 self.position += 1;
                 self.try_parse_mult_expression(start, next.repr.into(), ending)
@@ -339,11 +348,13 @@ impl<'src> Parser<'src> {
         use TokenRepr::{Const, Identifier, Semicolon, Set};
 
         let tokens = self.matches(&[Const, Identifier, Set])?;
-        let name = tokens[1].data;
         let value = self.try_parse_expr(TokenRepr::Semicolon)?;
         self.expect(Semicolon)?;
 
-        Ok(AstElement::Const { name, value })
+        Ok(AstElement::Const {
+            name: tokens[1].data,
+            value,
+        })
     }
 }
 

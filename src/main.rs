@@ -1,7 +1,31 @@
 use core::error::Error;
+use parser::{Expr, Operator};
+
+use crate::parser::AstElement;
 
 mod lexer;
 mod parser;
+
+fn calculate_expr(expr: Expr) -> i64 {
+    match expr {
+        Expr::BinOp {
+            left,
+            right,
+            operator,
+        } => {
+            let left = calculate_expr(*left);
+            let right = calculate_expr(*right);
+            match operator {
+                Operator::Plus => left + right,
+                Operator::Minus => left - right,
+                Operator::Div => left / right,
+                Operator::Mult => left * right,
+            }
+        }
+        Expr::Number(num) => num.parse().unwrap(),
+        _ => panic!(),
+    }
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let source = std::fs::read_to_string("./test.cofy")?;
@@ -25,7 +49,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut parser = parser::Parser::new(&tokens);
     for ast in &mut parser {
         match ast {
-            Ok(ast) => println!("AST ELEMENT: {ast:#?}"),
+            Ok(ast) => {
+                println!("AST ELEMENT: {ast:#?}");
+                let AstElement::Const { name, value } = ast;
+                println!("const {name} = {}", calculate_expr(value))
+            }
             Err(e) => {
                 println!("ERROR: {e}");
             }
