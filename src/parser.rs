@@ -32,7 +32,6 @@ pub enum ErrorRepr {
         allowed: &'static [TokenRepr],
         found: TokenRepr,
     },
-    Other(&'static str),
     ExpectedExpression {
         found: TokenRepr,
     },
@@ -64,13 +63,6 @@ impl ParserError {
         Self {
             repr: ErrorRepr::Eof,
             source_pos: None,
-        }
-    }
-
-    pub const fn not_implemented(tok: Token<'_>) -> Self {
-        Self {
-            source_pos: Some(tok.pos),
-            repr: ErrorRepr::Other("not yet implemented"),
         }
     }
 
@@ -106,7 +98,6 @@ impl fmt::Display for ErrorRepr {
             Self::UnexpectedToken { expected, found } => {
                 write!(f, "expected {expected:?}, found {found:?}")
             }
-            Self::Other(s) => write!(f, "{s}"),
             Self::UnexpectedMultiple { allowed, found } => {
                 write!(f, "expected ")?;
                 for (i, r) in (*allowed).iter().enumerate() {
@@ -226,17 +217,6 @@ impl<'src> Parser<'src> {
         }
     }
 
-    fn expect_sev(&mut self, tys: &'static [TokenRepr]) -> Result<Token<'src>, ParserError> {
-        let next = self.advance_or_eof()?;
-        for ty in tys {
-            if next.repr == *ty {
-                return Ok(next);
-            }
-        }
-
-        Err(ParserError::unexpected_multiple(tys, next))
-    }
-
     pub fn try_parse_mult_expression(
         &mut self,
         left: Expr<'src>,
@@ -281,6 +261,54 @@ impl<'src> Parser<'src> {
         }
     }
 
+    pub fn try_parse_paren_expr(&mut self, start: TokenRepr) -> Result<Expr<'src>, ParserError> {
+        let end = match start {
+            TokenRepr::LParen => TokenRepr::RParen,
+            TokenRepr::LBracket => TokenRepr::RBracket,
+            TokenRepr::LAngle => TokenRepr::RAngle,
+            TokenRepr::LFigure => TokenRepr::RFigure,
+            _ => panic!(),
+        };
+
+        let res = self.try_parse_expr(end);
+        self.position += 1;
+        res
+    }
+
+    fn try_parse_chain(
+        &mut self,
+        start: Expr<'src>,
+        ending: TokenRepr,
+    ) -> Result<Expr<'src>, ParserError> {
+        let next = self.current_or_eof()?;
+
+        match next.repr {
+            TokenRepr::Plus | TokenRepr::Minus => {
+                self.position += 1;
+                Ok(Expr::binop(
+                    start,
+                    next.repr.into(),
+                    self.try_parse_expr(ending)?,
+                ))
+            }
+            TokenRepr::Div | TokenRepr::Mult => {
+                self.position += 1;
+                self.try_parse_mult_expression(start, next.repr.into(), ending)
+            }
+
+            e if e == ending => Ok(start),
+            _ => Err(ParserError::unexpected_multiple(
+                &[
+                    TokenRepr::Plus,
+                    TokenRepr::Minus,
+                    TokenRepr::Div,
+                    TokenRepr::Mult,
+                ],
+                next,
+            )),
+        }
+    }
+
     /// `ending` is the [`TokenRepr`] you wanna stop at, e.g. if you are parsing
     /// a `const` it should be `;`, if you are parsing an object it should be `,`
     pub fn try_parse_expr(&mut self, ending: TokenRepr) -> Result<Expr<'src>, ParserError> {
@@ -289,41 +317,20 @@ impl<'src> Parser<'src> {
         match tok.repr {
             TokenRepr::String | TokenRepr::Number => {
                 let tok = Expr::from_token(tok);
-                let next = self.current_or_eof()?;
+                self.try_parse_chain(tok, ending)
+            }
 
-                return match next.repr {
-                    TokenRepr::Plus | TokenRepr::Minus => {
-                        self.position += 1;
-                        Ok(Expr::binop(
-                            tok,
-                            next.repr.into(),
-                            self.try_parse_expr(ending)?,
-                        ))
-                    }
-                    TokenRepr::Div | TokenRepr::Mult => {
-                        self.position += 1;
-                        self.try_parse_mult_expression(tok, next.repr.into(), ending)
-                    }
-
-                    e if e == ending => Ok(tok),
-                    _ => Err(ParserError::unexpected_multiple(
-                        &[
-                            TokenRepr::Plus,
-                            TokenRepr::Minus,
-                            TokenRepr::Div,
-                            TokenRepr::Mult,
-                        ],
-                        next,
-                    )),
-                };
+            TokenRepr::LAngle | TokenRepr::LBracket | TokenRepr::LFigure | TokenRepr::LParen => {
+                let res = self.try_parse_paren_expr(tok.repr)?;
+                self.try_parse_chain(res, ending)
             }
 
             e if e == ending => {
                 // if we get an ending then it means that an expression is expected
-                return Err(ParserError::expected_expression(tok));
+                Err(ParserError::expected_expression(tok))
             }
             _ => todo!("{tok:?}"),
-        };
+        }
 
         //Ok(Expr::Number(tok.data))
     }
