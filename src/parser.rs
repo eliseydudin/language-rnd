@@ -138,6 +138,10 @@ pub enum Expr<'src> {
         right: Box<Self>,
         operator: Operator,
     },
+    Unary {
+        oper: Operator,
+        inner: Box<Self>,
+    },
 }
 
 impl<'src> Expr<'src> {
@@ -257,7 +261,7 @@ impl<'src> Parser<'src> {
                 }
             }
 
-            TokenRepr::LParen | TokenRepr::LAngle | TokenRepr::LBracket | TokenRepr::LFigure => {
+            TokenRepr::LParen => {
                 let expr = Expr::binop(left, oper, self.try_parse_paren_expr(next.repr)?);
                 self.try_parse_chain(expr, ending)
             }
@@ -318,6 +322,19 @@ impl<'src> Parser<'src> {
         }
     }
 
+    /// Parse a single value: number, string, identifier, function call, tuple,
+    /// an expression in parenthesis.
+    /// Doesn't parse unary expressions, use `try_parse_expr` for that
+    pub fn try_parse_value(&mut self) -> Result<Expr<'src>, ParserError> {
+        let curr = self.advance_or_eof()?;
+        match curr.repr {
+            TokenRepr::Number => Ok(Expr::Number(curr.data)),
+            TokenRepr::String => Ok(Expr::String(curr.data)),
+            TokenRepr::LParen => self.try_parse_paren_expr(curr.repr),
+            _ => todo!(),
+        }
+    }
+
     /// `ending` is the [`TokenRepr`] you wanna stop at, e.g. if you are parsing
     /// a `const` it should be `;`, if you are parsing an object it should be `,`
     pub fn try_parse_expr(&mut self, ending: TokenRepr) -> Result<Expr<'src>, ParserError> {
@@ -329,9 +346,19 @@ impl<'src> Parser<'src> {
                 self.try_parse_chain(tok, ending)
             }
 
-            TokenRepr::LAngle | TokenRepr::LBracket | TokenRepr::LFigure | TokenRepr::LParen => {
+            TokenRepr::LParen => {
                 let res = self.try_parse_paren_expr(tok.repr)?;
                 self.try_parse_chain(res, ending)
+            }
+
+            // try an unary expression
+            TokenRepr::Minus | TokenRepr::Plus => {
+                let val = Expr::Unary {
+                    oper: tok.repr.into(),
+                    inner: Box::new(self.try_parse_value()?),
+                };
+
+                self.try_parse_chain(val, ending)
             }
 
             e if e == ending => {
@@ -348,7 +375,7 @@ impl<'src> Parser<'src> {
         use TokenRepr::{Const, Identifier, Semicolon, Set};
 
         let tokens = self.matches(&[Const, Identifier, Set])?;
-        let value = self.try_parse_expr(TokenRepr::Semicolon)?;
+        let value = self.try_parse_expr(Semicolon)?;
         self.expect(Semicolon)?;
 
         Ok(AstElement::Const {

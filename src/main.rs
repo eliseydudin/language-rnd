@@ -6,7 +6,7 @@ use crate::parser::AstElement;
 mod lexer;
 mod parser;
 
-fn calculate_expr(expr: Expr) -> i64 {
+fn calculate_expr(expr: Expr) -> f64 {
     match expr {
         Expr::BinOp {
             left,
@@ -23,6 +23,14 @@ fn calculate_expr(expr: Expr) -> i64 {
             }
         }
         Expr::Number(num) => num.parse().unwrap(),
+        Expr::Unary { oper, inner } => {
+            let val = calculate_expr(*inner);
+            match oper {
+                Operator::Minus => -val,
+                Operator::Plus => val,
+                _ => unreachable!(),
+            }
+        }
         _ => panic!(),
     }
 }
