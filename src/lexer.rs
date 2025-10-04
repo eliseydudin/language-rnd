@@ -158,7 +158,7 @@ impl<'a> Token<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    pub fn new(source: &'a str) -> Self {
+    pub const fn new(source: &'a str) -> Self {
         Self {
             source,
             source_pos: SourcePosition { line: 0, symbol: 0 },
@@ -179,7 +179,7 @@ impl<'a> Lexer<'a> {
 
                 if *byte == b'\n' {
                     self.source_pos.line += 1;
-                    self.source_pos.symbol = 0
+                    self.source_pos.symbol = 0;
                 } else {
                     self.source_pos.symbol += 1;
                 }
@@ -189,7 +189,7 @@ impl<'a> Lexer<'a> {
     }
 
     // attempts to rewind 1 step
-    pub fn rewind(&mut self) {
+    pub const fn rewind(&mut self) {
         if self.position > 0 {
             self.position -= 1;
             self.source_pos = self.last_source_pos.unwrap();
@@ -204,9 +204,8 @@ impl<'a> Lexer<'a> {
 
             if next.is_ascii_whitespace() {
                 continue;
-            } else {
-                return Some(next);
             }
+            return Some(next);
         }
     }
 
@@ -216,10 +215,9 @@ impl<'a> Lexer<'a> {
         while let Some(next) = self.advance() {
             if next.is_ascii_alphanumeric() || next == b'_' {
                 continue;
-            } else {
-                self.rewind();
-                break;
             }
+            self.rewind();
+            break;
         }
 
         Ok(Token::new(
@@ -234,10 +232,9 @@ impl<'a> Lexer<'a> {
         while let Some(next) = self.advance() {
             if next.is_ascii_digit() {
                 continue;
-            } else {
-                self.rewind();
-                break;
             }
+            self.rewind();
+            break;
         }
 
         Ok(Token::new(
@@ -250,11 +247,8 @@ impl<'a> Lexer<'a> {
     pub fn lex_string(&mut self) -> Result<Token<'a>, LexerError> {
         let start = self.position;
         loop {
-            let next = match self.advance() {
-                Some(n) => n,
-                None => {
-                    return Err(WithPos::new(ErrorRepr::Eof, self.source_pos));
-                }
+            let Some(next) = self.advance() else {
+                return Err(WithPos::new(ErrorRepr::Eof, self.source_pos));
             };
 
             if next == b'"' {

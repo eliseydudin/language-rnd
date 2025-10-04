@@ -17,11 +17,11 @@ impl<T, I: Iterator<Item = T>> PeekIter<T, I> {
         }
     }
 
-    pub fn current(&self) -> Option<&T> {
+    pub const fn current(&self) -> Option<&T> {
         self.current.as_ref()
     }
 
-    pub fn peek(&self) -> Option<&T> {
+    pub const fn peek(&self) -> Option<&T> {
         self.next.as_ref()
     }
 
@@ -31,11 +31,11 @@ impl<T, I: Iterator<Item = T>> PeekIter<T, I> {
 }
 
 impl<T: Copy, I: Iterator<Item = T>> PeekIter<T, I> {
-    pub fn current_copied(&self) -> Option<T> {
+    pub const fn current_copied(&self) -> Option<T> {
         self.current
     }
 
-    pub fn peek_copied(&self) -> Option<T> {
+    pub const fn peek_copied(&self) -> Option<T> {
         self.next
     }
 }
