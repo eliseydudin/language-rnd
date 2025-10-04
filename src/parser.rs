@@ -1,5 +1,5 @@
 use crate::{
-    lexer::{SourcePosition, Token, TokenRepr},
+    lexer::{Token, TokenRepr, WithPos, WithPosOrEof},
     peek_iter::PeekIter,
 };
 
@@ -10,37 +10,73 @@ pub enum ErrorRepr {
         found: TokenRepr,
         expected: TokenRepr,
     },
+    UnexpectedMult {
+        found: TokenRepr,
+        expected: &'static [TokenRepr],
+    },
+    ExpectedExpression(TokenRepr),
+    DoubleUnary,
 }
 
-#[derive(Debug)]
-pub struct ParserError {
-    repr: ErrorRepr,
-    pos: Option<SourcePosition>,
+pub type ParserError = WithPosOrEof<ErrorRepr>;
+
+pub fn throw_eof_error() -> ParserError {
+    WithPosOrEof::Eof(ErrorRepr::Eof)
 }
 
-impl ParserError {
-    pub const fn eof() -> Self {
-        Self {
-            repr: ErrorRepr::Eof,
-            pos: None,
-        }
-    }
+pub fn throw_expected_expression(tok: Token) -> ParserError {
+    WithPosOrEof::Pos(WithPos::new(
+        ErrorRepr::ExpectedExpression(tok.repr),
+        tok.pos,
+    ))
+}
 
-    pub const fn unexpected(found: Token, expected: TokenRepr) -> Self {
-        Self {
-            pos: Some(found.pos),
-            repr: ErrorRepr::Unexpected {
-                found: found.repr,
-                expected,
-            },
-        }
+pub fn throw_unexpected(found: Token, expected: TokenRepr) -> ParserError {
+    WithPosOrEof::Pos(WithPos::new(
+        ErrorRepr::Unexpected {
+            found: found.repr,
+            expected,
+        },
+        found.pos,
+    ))
+}
+
+pub fn throw_unexpected_mult(found: Token, expected: &'static [TokenRepr]) -> ParserError {
+    WithPosOrEof::Pos(WithPos::new(
+        ErrorRepr::UnexpectedMult {
+            found: found.repr,
+            expected,
+        },
+        found.pos,
+    ))
+}
+
+pub fn throw_double_unary(tok: Token) -> ParserError {
+    WithPosOrEof::Pos(WithPos::new(ErrorRepr::DoubleUnary, tok.pos))
+}
+
+pub fn binop_expr<'a>(left: Expr<'a>, op: TokenRepr, right: Expr<'a>) -> Expr<'a> {
+    Expr::BinOp {
+        left: Box::new(left),
+        op,
+        right: Box::new(right),
     }
+}
+
+pub fn unary_expr<'a>(expr: Expr<'a>) -> Expr<'a> {
+    Expr::Unary(Box::new(expr))
 }
 
 #[derive(Debug)]
 pub enum Expr<'src> {
     Number(&'src str),
     String(&'src str),
+    BinOp {
+        left: Box<Self>,
+        op: TokenRepr,
+        right: Box<Self>,
+    },
+    Unary(Box<Self>),
 }
 
 #[derive(Debug)]
@@ -48,20 +84,7 @@ pub enum AstRepr<'src> {
     Const { name: &'src str, value: Expr<'src> },
 }
 
-#[derive(Debug)]
-pub struct AstElement<'src> {
-    repr: AstRepr<'src>,
-    pos: SourcePosition,
-}
-
-impl<'src> AstElement<'src> {
-    pub fn new_const(start: SourcePosition, name: &'src str, value: Expr<'src>) -> Self {
-        Self {
-            repr: AstRepr::Const { name, value },
-            pos: start,
-        }
-    }
-}
+pub type Ast<'a> = WithPos<AstRepr<'a>>;
 
 pub struct Parser<'src, I>
 where
@@ -77,67 +100,136 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         Self { iter }
     }
 
-    /// Get the current token in the iterator, if the current token is [`None`],
-    /// return an EOF error.
-    pub fn current(&self) -> ParserResult<Token<'src>> {
-        self.iter.current_copied().ok_or_else(ParserError::eof)
-    }
+    // /// Get the current token in the iterator, if the current token is [`None`],
+    // /// return an EOF error.
+    // pub fn current(&self) -> ParserResult<Token<'src>> {
+    //     self.iter.current_copied().ok_or_else(throw_eof_error)
+    // }
 
     /// Get the current token in the iterator and advance it, if the current token is [`None`],
     /// return an EOF error.
     pub fn advance(&mut self) -> ParserResult<Token<'src>> {
-        self.iter.advance().ok_or_else(ParserError::eof)
+        self.iter.advance().ok_or_else(throw_eof_error)
     }
 
-    /// Get the next token in the iterator, if the token is [`None`],
-    /// return an EOF error.
-    pub fn peek(&self) -> ParserResult<Token<'src>> {
-        self.iter.peek_copied().ok_or_else(ParserError::eof)
-    }
+    // /// Get the next token in the iterator, if the token is [`None`],
+    // /// return an EOF error.
+    // pub fn peek(&self) -> ParserResult<Token<'src>> {
+    //     self.iter.peek_copied().ok_or_else(throw_eof_error)
+    // }
 
-    pub fn expect(
-        &mut self,
-        expected: &'static [TokenRepr],
-        value_at: usize,
-    ) -> ParserResult<Token<'src>> {
-        assert!(value_at < expected.len());
-        let mut result = self.current()?;
+    pub fn expect(&mut self, expect: TokenRepr) -> ParserResult<Token<'src>> {
+        let curr = self.advance()?;
 
-        for (i, expect) in expected.iter().enumerate() {
-            let tok = self.advance()?;
-
-            if tok.repr != *expect {
-                return Err(ParserError::unexpected(tok, *expect));
-            } else if value_at == i {
-                result = tok;
-            }
+        if curr.repr == expect {
+            Ok(curr)
+        } else {
+            Err(WithPosOrEof::Pos(WithPos::new(
+                ErrorRepr::Unexpected {
+                    found: curr.repr,
+                    expected: expect,
+                },
+                curr.pos,
+            )))
         }
-
-        Ok(result)
     }
 
-    // --ACTUAL PARSER FUNCTIONS HERE--
+    pub fn parse_const(&mut self) -> ParserResult<Ast<'src>> {
+        let c = self.expect(TokenRepr::Const)?;
+        let name = self.expect(TokenRepr::Identifier)?;
+        self.expect(TokenRepr::Set)?;
+        let value = self.parse_expr(TokenRepr::Semicolon)?;
 
-    /// Parse an [`AstRepr::Const`], assumes that the current token
-    /// is of type [`TokenRepr::Const`]
-    pub fn parse_const(&mut self) -> ParserResult<AstElement<'src>> {
-        let name = self.expect(
-            &[TokenRepr::Const, TokenRepr::Identifier, TokenRepr::Set],
-            1,
-        )?;
-        self.expect(&[TokenRepr::Set], 0)?;
-        let expr = self.parse_expr()?;
-
-        Ok(AstElement::new_const(name.pos, name.data, expr))
+        Ok(Ast::new(
+            AstRepr::Const {
+                name: name.data,
+                value,
+            },
+            c.pos,
+        ))
     }
 
-    pub fn parse_expr(&mut self) -> ParserResult<Expr<'src>> {
-        todo!()
+    pub fn parse_expr(&mut self, end: TokenRepr) -> ParserResult<Expr<'src>> {
+        let curr = self.parse_value(true)?;
+        self.cont_expr_or_end(curr, end)
+
+        // match curr.repr {
+        //     TokenRepr::LParen => {
+        //         let parens = self.parse_expr(TokenRepr::RParen)?;
+        //         self.cont_expr_or_end(parens, end)
+        //     }
+        //     e if e == end => Err(throw_expected_expression(curr)),
+        //     _ => todo!(),
+        // }
+    }
+
+    /// Parse one value in the token tree
+    pub fn parse_value(&mut self, allow_unary: bool) -> ParserResult<Expr<'src>> {
+        const EXPECTED: &[TokenRepr] = &[
+            TokenRepr::Number,
+            TokenRepr::String,
+            TokenRepr::Identifier,
+            TokenRepr::LParen,
+            TokenRepr::Minus,
+        ];
+
+        const EXPECTED_NO_UNARY: &[TokenRepr] = &[
+            TokenRepr::Number,
+            TokenRepr::String,
+            TokenRepr::Identifier,
+            TokenRepr::LParen,
+        ];
+
+        let current = self.advance()?;
+
+        match current.repr {
+            TokenRepr::Number => Ok(Expr::Number(current.data)),
+            TokenRepr::String => Ok(Expr::String(current.data)),
+            TokenRepr::Identifier => todo!(),
+            TokenRepr::LParen => self.parse_expr(TokenRepr::RParen),
+            TokenRepr::Minus if allow_unary => Ok(unary_expr(self.parse_value(false)?)),
+            TokenRepr::Minus if !allow_unary => Err(throw_double_unary(current)),
+            _ if allow_unary => Err(throw_unexpected_mult(current, EXPECTED)),
+            _ => Err(throw_unexpected_mult(current, EXPECTED_NO_UNARY)),
+        }
+    }
+
+    pub fn cont_expr_or_end(
+        &mut self,
+        start: Expr<'src>,
+        end: TokenRepr,
+    ) -> ParserResult<Expr<'src>> {
+        let current = self.advance()?;
+
+        match current.repr {
+            TokenRepr::Mult | TokenRepr::Div => {
+                let value = self.parse_value(true)?;
+                self.cont_expr_or_end(binop_expr(start, current.repr, value), end)
+            }
+
+            TokenRepr::Plus | TokenRepr::Minus => {
+                let next = self.parse_value(true)?;
+                let next = self.cont_expr_or_end(next, end)?;
+                Ok(binop_expr(start, current.repr, next))
+            }
+
+            e if e == end => Ok(start),
+
+            _ => Err(throw_unexpected_mult(
+                current,
+                &[
+                    TokenRepr::Mult,
+                    TokenRepr::Div,
+                    TokenRepr::Plus,
+                    TokenRepr::Minus,
+                ],
+            )),
+        }
     }
 }
 
 impl<'src, I: Iterator<Item = Token<'src>>> Iterator for Parser<'src, I> {
-    type Item = ParserResult<AstElement<'src>>;
+    type Item = ParserResult<Ast<'src>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let current = self.iter.current_copied()?;
@@ -147,5 +239,15 @@ impl<'src, I: Iterator<Item = Token<'src>>> Iterator for Parser<'src, I> {
         };
 
         Some(res)
+    }
+}
+
+pub trait IntoParser<'s>: Iterator<Item = Token<'s>> + Sized {
+    fn into_parser(self) -> Parser<'s, Self>;
+}
+
+impl<'s, I: Iterator<Item = Token<'s>>> IntoParser<'s> for I {
+    fn into_parser(self) -> Parser<'s, Self> {
+        Parser::new(PeekIter::new(self))
     }
 }

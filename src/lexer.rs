@@ -1,5 +1,6 @@
 use core::error::Error;
 use core::fmt;
+use core::ops;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorRepr {
@@ -16,21 +17,7 @@ impl fmt::Display for ErrorRepr {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct LexerError {
-    repr: ErrorRepr,
-    source_pos: SourcePosition,
-}
-
-impl fmt::Display for LexerError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "an error occurred at {} - {}",
-            self.source_pos, self.repr
-        )
-    }
-}
+pub type LexerError = WithPos<ErrorRepr>;
 
 impl Error for LexerError {}
 
@@ -40,11 +27,59 @@ pub struct SourcePosition {
     pub symbol: usize,
 }
 
+pub struct WithPos<T> {
+    pub inner: T,
+    pub pos: SourcePosition,
+}
+
+impl<T> WithPos<T> {
+    pub const fn new(inner: T, pos: SourcePosition) -> Self {
+        Self { inner, pos }
+    }
+}
+
+impl<T> ops::Deref for WithPos<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<T> ops::DerefMut for WithPos<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+#[derive(Debug)]
+pub enum WithPosOrEof<T> {
+    Pos(WithPos<T>),
+    Eof(T),
+}
+
 impl fmt::Display for SourcePosition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.line + 1, self.symbol + 1)
     }
 }
+
+impl<T: fmt::Display> fmt::Display for WithPos<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} {}", self.pos, self.inner)
+    }
+}
+
+impl<T: fmt::Debug> fmt::Debug for WithPos<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WithPos")
+            .field("inner", &self.inner)
+            .field("pos", &self.pos)
+            .finish()
+    }
+}
+
+impl<T: Error> Error for WithPos<T> {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Lexer<'src> {
@@ -163,16 +198,14 @@ impl<'a> Lexer<'a> {
     }
 
     /// Skips whitespace between tokens. Returns the next byte and a bool that checks if any whitespace was actually skipped
-    pub fn skip_whitespace(&mut self) -> Option<(u8, bool)> {
-        let mut found_whitespace = false;
+    pub fn skip_whitespace(&mut self) -> Option<u8> {
         loop {
             let next = self.advance()?;
 
             if next.is_ascii_whitespace() {
-                found_whitespace = true;
                 continue;
             } else {
-                return Some((next, found_whitespace));
+                return Some(next);
             }
         }
     }
@@ -220,10 +253,7 @@ impl<'a> Lexer<'a> {
             let next = match self.advance() {
                 Some(n) => n,
                 None => {
-                    return Err(LexerError {
-                        repr: ErrorRepr::Eof,
-                        source_pos: self.source_pos,
-                    });
+                    return Err(WithPos::new(ErrorRepr::Eof, self.source_pos));
                 }
             };
 
@@ -244,34 +274,38 @@ impl<'a> Lexer<'a> {
     }
 
     pub fn lex_fallback(&mut self, start: u8) -> Result<Token<'a>, LexerError> {
-        match start {
-            b'(' => Ok(self.small_token(TokenRepr::LParen, 1)),
-            b')' => Ok(self.small_token(TokenRepr::RParen, 1)),
-            b'.' => Ok(self.small_token(TokenRepr::Dot, 1)),
-            b',' => Ok(self.small_token(TokenRepr::Coma, 1)),
-            b'{' => Ok(self.small_token(TokenRepr::LFigure, 1)),
-            b'}' => Ok(self.small_token(TokenRepr::RFigure, 1)),
-            b'[' => Ok(self.small_token(TokenRepr::LBracket, 1)),
-            b']' => Ok(self.small_token(TokenRepr::RBracket, 1)),
-            b'<' => Ok(self.small_token_or(TokenRepr::LAngle, b'=', TokenRepr::Lt)),
-            b'>' => Ok(self.small_token_or(TokenRepr::RAngle, b'=', TokenRepr::Gt)),
-            b'=' => Ok(self.small_token_or_several(
+        let result = match start {
+            b'(' => self.small_token(TokenRepr::LParen, 1),
+            b')' => self.small_token(TokenRepr::RParen, 1),
+            b'.' => self.small_token(TokenRepr::Dot, 1),
+            b',' => self.small_token(TokenRepr::Coma, 1),
+            b'{' => self.small_token(TokenRepr::LFigure, 1),
+            b'}' => self.small_token(TokenRepr::RFigure, 1),
+            b'[' => self.small_token(TokenRepr::LBracket, 1),
+            b']' => self.small_token(TokenRepr::RBracket, 1),
+            b'<' => self.small_token_or(TokenRepr::LAngle, b'=', TokenRepr::Lt),
+            b'>' => self.small_token_or(TokenRepr::RAngle, b'=', TokenRepr::Gt),
+            b'=' => self.small_token_or_several(
                 TokenRepr::Set,
                 b"=>",
                 &[TokenRepr::Equal, TokenRepr::Arrow],
-            )),
-            b':' => Ok(self.small_token(TokenRepr::Colon, 1)),
-            b';' => Ok(self.small_token(TokenRepr::Semicolon, 1)),
-            b'+' => Ok(self.small_token(TokenRepr::Plus, 1)),
-            b'-' => Ok(self.small_token(TokenRepr::Minus, 1)),
-            b'*' => Ok(self.small_token(TokenRepr::Mult, 1)),
-            b'/' => Ok(self.small_token(TokenRepr::Div, 1)),
+            ),
+            b':' => self.small_token(TokenRepr::Colon, 1),
+            b';' => self.small_token(TokenRepr::Semicolon, 1),
+            b'+' => self.small_token(TokenRepr::Plus, 1),
+            b'-' => self.small_token(TokenRepr::Minus, 1),
+            b'*' => self.small_token(TokenRepr::Mult, 1),
+            b'/' => self.small_token(TokenRepr::Div, 1),
 
-            other => Err(LexerError {
-                repr: ErrorRepr::UnknownCharacter(other),
-                source_pos: self.source_pos,
-            }),
-        }
+            other => {
+                return Err(WithPos::new(
+                    ErrorRepr::UnknownCharacter(other),
+                    self.source_pos,
+                ));
+            }
+        };
+
+        Ok(result)
     }
 
     fn small_token(&self, ty: TokenRepr, offset: usize) -> Token<'a> {
@@ -313,7 +347,7 @@ impl<'a> Iterator for Lexer<'a> {
     type Item = Result<Token<'a>, LexerError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let (next, _) = self.skip_whitespace()?;
+        let next = self.skip_whitespace()?;
         Some(
             match next {
                 b'a'..=b'z' | b'A'..=b'Z' => self.lex_identifier(),
@@ -321,7 +355,7 @@ impl<'a> Iterator for Lexer<'a> {
                 b'"' => self.lex_string(),
                 f => self.lex_fallback(f),
             }
-            .map(|t| t.try_convert_to_keyword()),
+            .map(Token::try_convert_to_keyword),
         )
     }
 }

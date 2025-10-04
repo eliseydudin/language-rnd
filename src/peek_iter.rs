@@ -50,13 +50,3 @@ impl<T, I: Iterator<Item = T>> Iterator for PeekIter<T, I> {
         )
     }
 }
-
-pub trait IntoPeekIter<T>: Iterator<Item = T> + Sized {
-    fn into_peek_iter(self) -> PeekIter<T, Self>;
-}
-
-impl<T, I: Iterator<Item = T>> IntoPeekIter<T> for I {
-    fn into_peek_iter(self) -> PeekIter<T, Self> {
-        PeekIter::new(self)
-    }
-}
