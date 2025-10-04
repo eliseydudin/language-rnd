@@ -41,7 +41,7 @@ fn calculate_expr(expr: Expr) -> f64 {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    const FILE: &'static str = "./test.cofy";
+    const FILE: &str = "./test.cofy";
 
     let source = std::fs::read_to_string(FILE)?;
     lexer::Lexer::new(&source)
@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         .for_each(|ast| {
             println!("{FILE}:{} {:#?}", ast.pos, ast.inner);
             let AstRepr::Const { name, value } = ast.inner;
-            println!("const {name} = {}", calculate_expr(value))
+            println!("const {name} = {}", calculate_expr(value));
         });
 
     Ok(())

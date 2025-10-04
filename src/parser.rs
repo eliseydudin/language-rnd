@@ -20,18 +20,18 @@ pub enum ErrorRepr {
 
 pub type ParserError = WithPosOrEof<ErrorRepr>;
 
-pub fn throw_eof_error() -> ParserError {
+pub const fn throw_eof_error() -> ParserError {
     WithPosOrEof::Eof(ErrorRepr::Eof)
 }
 
-pub fn throw_expected_expression(tok: Token) -> ParserError {
+pub const fn throw_expected_expression(tok: Token) -> ParserError {
     WithPosOrEof::Pos(WithPos::new(
         ErrorRepr::ExpectedExpression(tok.repr),
         tok.pos,
     ))
 }
 
-pub fn throw_unexpected(found: Token, expected: TokenRepr) -> ParserError {
+pub const fn throw_unexpected(found: Token, expected: TokenRepr) -> ParserError {
     WithPosOrEof::Pos(WithPos::new(
         ErrorRepr::Unexpected {
             found: found.repr,
@@ -41,7 +41,7 @@ pub fn throw_unexpected(found: Token, expected: TokenRepr) -> ParserError {
     ))
 }
 
-pub fn throw_unexpected_mult(found: Token, expected: &'static [TokenRepr]) -> ParserError {
+pub const fn throw_unexpected_mult(found: Token, expected: &'static [TokenRepr]) -> ParserError {
     WithPosOrEof::Pos(WithPos::new(
         ErrorRepr::UnexpectedMult {
             found: found.repr,
@@ -51,7 +51,7 @@ pub fn throw_unexpected_mult(found: Token, expected: &'static [TokenRepr]) -> Pa
     ))
 }
 
-pub fn throw_double_unary(tok: Token) -> ParserError {
+pub const fn throw_double_unary(tok: Token) -> ParserError {
     WithPosOrEof::Pos(WithPos::new(ErrorRepr::DoubleUnary, tok.pos))
 }
 
@@ -63,7 +63,7 @@ pub fn binop_expr<'a>(left: Expr<'a>, op: TokenRepr, right: Expr<'a>) -> Expr<'a
     }
 }
 
-pub fn unary_expr<'a>(expr: Expr<'a>) -> Expr<'a> {
+pub fn unary_expr(expr: Expr<'_>) -> Expr<'_> {
     Expr::Unary(Box::new(expr))
 }
 
