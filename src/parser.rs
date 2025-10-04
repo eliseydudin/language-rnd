@@ -2,6 +2,7 @@ use crate::{
     lexer::{Token, TokenRepr, WithPos, WithPosOrEof},
     peek_iter::PeekIter,
 };
+use core::{error, fmt};
 
 #[derive(Debug)]
 pub enum ErrorRepr {
@@ -17,6 +18,33 @@ pub enum ErrorRepr {
     ExpectedExpression(TokenRepr),
     DoubleUnary,
 }
+
+impl fmt::Display for ErrorRepr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Eof => write!(f, "expected a token, found eof"),
+            Self::Unexpected { found, expected } => {
+                write!(f, "expected {expected:?}, found {found:?}")
+            }
+            Self::UnexpectedMult { found, expected } => {
+                write!(f, "expected {{ ")?;
+                for (i, elem) in expected.iter().copied().enumerate() {
+                    if i == expected.len() - 1 {
+                        write!(f, "{elem:?} }}")?
+                    } else {
+                        write!(f, "{elem:?} | ")?
+                    }
+                }
+
+                write!(f, " found {found:?}")
+            }
+            Self::DoubleUnary => write!(f, "an unary expression repeated 2 times is not allowed"),
+            Self::ExpectedExpression(tok) => write!(f, "expected expression, found {tok:?}"),
+        }
+    }
+}
+
+impl error::Error for ErrorRepr {}
 
 pub type ParserError = WithPosOrEof<ErrorRepr>;
 
@@ -235,7 +263,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Iterator for Parser<'src, I> {
         let current = self.iter.current_copied()?;
         let res = match current.repr {
             TokenRepr::Const => self.parse_const(),
-            _ => todo!(),
+            _ => todo!("{current:?}"),
         };
 
         Some(res)

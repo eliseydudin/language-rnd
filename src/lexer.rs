@@ -1,6 +1,7 @@
 use core::error::Error;
 use core::fmt;
 use core::ops;
+use std::fmt::Display;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorRepr {
@@ -58,6 +59,24 @@ pub enum WithPosOrEof<T> {
     Eof(T),
 }
 
+impl<T: Display> fmt::Display for WithPosOrEof<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pos(p) => write!(f, "{p}"),
+            Self::Eof(t) => write!(f, "<EOF> {t}"),
+        }
+    }
+}
+
+impl<T: 'static + Error> Error for WithPosOrEof<T> {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Pos(p) => Some(p),
+            Self::Eof(t) => Some(t),
+        }
+    }
+}
+
 impl fmt::Display for SourcePosition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.line + 1, self.symbol + 1)
@@ -81,7 +100,7 @@ impl<T: fmt::Debug> fmt::Debug for WithPos<T> {
 
 impl<T: Error> Error for WithPos<T> {}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lexer<'src> {
     source: &'src str,
     position: usize,

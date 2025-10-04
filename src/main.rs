@@ -1,19 +1,17 @@
 use core::error::Error;
-use core::fmt::Debug;
+use core::fmt::Display;
 use lexer::TokenRepr;
-use parser::{Expr, IntoParser};
-
-use crate::parser::AstRepr;
+use parser::{AstRepr, Expr, IntoParser};
 
 mod lexer;
 mod parser;
 mod peek_iter;
 
-fn display<T, E: Debug>(t: Result<T, E>) -> Option<T> {
+fn display<T, E: Display>(t: Result<T, E>) -> Option<T> {
     match t {
         Ok(tok) => Some(tok),
         Err(e) => {
-            println!("err: {e:?}");
+            println!("err: {e}");
             None
         }
     }
