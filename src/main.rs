@@ -39,6 +39,8 @@ fn calculate_expr(expr: Expr) -> f64 {
             if let Expr::Identifier(name) = *object {
                 if name == "sin" {
                     calculate_expr(*params).sin()
+                } else if name == "cos" {
+                    calculate_expr(*params).cos()
                 } else {
                     todo!()
                 }

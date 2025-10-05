@@ -15,7 +15,6 @@ pub enum ErrorRepr {
         found: TokenRepr,
         expected: &'static [TokenRepr],
     },
-    ExpectedExpression(TokenRepr),
     DoubleUnary,
 }
 
@@ -39,7 +38,6 @@ impl fmt::Display for ErrorRepr {
                 write!(f, " found {found:?}")
             }
             Self::DoubleUnary => write!(f, "an unary expression repeated 2 times is not allowed"),
-            Self::ExpectedExpression(tok) => write!(f, "expected expression, found {tok:?}"),
         }
     }
 }
@@ -50,23 +48,6 @@ pub type ParserError = WithPosOrEof<ErrorRepr>;
 
 pub const fn throw_eof_error() -> ParserError {
     WithPosOrEof::Eof(ErrorRepr::Eof)
-}
-
-pub const fn throw_expected_expression(tok: Token) -> ParserError {
-    WithPosOrEof::Pos(WithPos::new(
-        ErrorRepr::ExpectedExpression(tok.repr),
-        tok.pos,
-    ))
-}
-
-pub const fn throw_unexpected(found: Token, expected: TokenRepr) -> ParserError {
-    WithPosOrEof::Pos(WithPos::new(
-        ErrorRepr::Unexpected {
-            found: found.repr,
-            expected,
-        },
-        found.pos,
-    ))
 }
 
 pub const fn throw_unexpected_mult(found: Token, expected: &'static [TokenRepr]) -> ParserError {
