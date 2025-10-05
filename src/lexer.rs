@@ -1,3 +1,4 @@
+use core::cmp;
 use core::error::Error;
 use core::fmt;
 use core::ops;
@@ -57,6 +58,16 @@ impl<T> ops::DerefMut for WithPos<T> {
 pub enum WithPosOrEof<T> {
     Pos(WithPos<T>),
     Eof(T),
+}
+
+impl<T: cmp::PartialEq> cmp::PartialEq for WithPosOrEof<T> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Pos(s), Self::Pos(o)) => s.inner == o.inner,
+            (Self::Eof(s), Self::Eof(o)) => s == o,
+            _ => false,
+        }
+    }
 }
 
 impl<T: Display> fmt::Display for WithPosOrEof<T> {

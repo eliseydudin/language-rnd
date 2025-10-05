@@ -1,2 +1,1 @@
-const b = 20
-const a = 20 * -1 * 30 - 20
+const a = sin(50) * sin(20) + 1;

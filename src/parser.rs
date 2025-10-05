@@ -4,7 +4,7 @@ use crate::{
 };
 use core::{error, fmt};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ErrorRepr {
     Eof,
     Unexpected {
@@ -95,16 +95,25 @@ pub fn unary_expr(expr: Expr<'_>) -> Expr<'_> {
     Expr::Unary(Box::new(expr))
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Expr<'src> {
     Number(&'src str),
     String(&'src str),
+    Identifier(&'src str),
     BinOp {
         left: Box<Self>,
         op: TokenRepr,
         right: Box<Self>,
     },
     Unary(Box<Self>),
+    Access {
+        object: Box<Self>,
+        property: &'src str,
+    },
+    Call {
+        object: Box<Self>,
+        params: Box<Self>,
+    },
 }
 
 #[derive(Debug)]
@@ -128,11 +137,11 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         Self { iter }
     }
 
-    // /// Get the current token in the iterator, if the current token is [`None`],
-    // /// return an EOF error.
-    // pub fn current(&self) -> ParserResult<Token<'src>> {
-    //     self.iter.current_copied().ok_or_else(throw_eof_error)
-    // }
+    /// Get the current token in the iterator, if the current token is [`None`],
+    /// return an EOF error.
+    pub fn current(&self) -> ParserResult<Token<'src>> {
+        self.iter.current_copied().ok_or_else(throw_eof_error)
+    }
 
     /// Get the current token in the iterator and advance it, if the current token is [`None`],
     /// return an EOF error.
@@ -140,11 +149,11 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         self.iter.advance().ok_or_else(throw_eof_error)
     }
 
-    // /// Get the next token in the iterator, if the token is [`None`],
-    // /// return an EOF error.
-    // pub fn peek(&self) -> ParserResult<Token<'src>> {
-    //     self.iter.peek_copied().ok_or_else(throw_eof_error)
-    // }
+    /// Get the next token in the iterator, if the token is [`None`],
+    /// return an EOF error.
+    pub fn peek(&self) -> ParserResult<Token<'src>> {
+        self.iter.peek_copied().ok_or_else(throw_eof_error)
+    }
 
     pub fn expect(&mut self, expect: TokenRepr) -> ParserResult<Token<'src>> {
         let curr = self.advance()?;
@@ -191,6 +200,35 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         // }
     }
 
+    pub fn parse_identifier_or_call(&mut self, start: Expr<'src>) -> ParserResult<Expr<'src>> {
+        let next = self.current()?;
+
+        if next.repr == TokenRepr::Dot {
+            let property = self.peek()?;
+            let access = Expr::Access {
+                object: Box::new(start),
+                property: property.data,
+            };
+
+            self.advance()?;
+            self.advance()?;
+
+            self.parse_identifier_or_call(access)
+        } else if next.repr == TokenRepr::LParen {
+            self.advance()?;
+
+            let params = self.parse_expr(TokenRepr::RParen)?;
+            let function_call = Expr::Call {
+                object: Box::new(start),
+                params: Box::new(params),
+            };
+
+            self.parse_identifier_or_call(function_call)
+        } else {
+            Ok(start)
+        }
+    }
+
     /// Parse one value in the token tree
     pub fn parse_value(&mut self, allow_unary: bool) -> ParserResult<Expr<'src>> {
         const EXPECTED: &[TokenRepr] = &[
@@ -213,7 +251,10 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         match current.repr {
             TokenRepr::Number => Ok(Expr::Number(current.data)),
             TokenRepr::String => Ok(Expr::String(current.data)),
-            TokenRepr::Identifier => todo!(),
+            TokenRepr::Identifier => {
+                let value = Expr::Identifier(current.data);
+                self.parse_identifier_or_call(value)
+            }
             TokenRepr::LParen => self.parse_expr(TokenRepr::RParen),
             TokenRepr::Minus if allow_unary => Ok(unary_expr(self.parse_value(false)?)),
             TokenRepr::Minus if !allow_unary => Err(throw_double_unary(current)),

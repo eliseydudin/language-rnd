@@ -2,8 +2,8 @@ use core::mem;
 
 pub struct PeekIter<T, I> {
     iter: I,
-    current: Option<T>,
-    next: Option<T>,
+    pub current: Option<T>,
+    pub next: Option<T>,
 }
 
 impl<T, I: Iterator<Item = T>> PeekIter<T, I> {
@@ -15,14 +15,6 @@ impl<T, I: Iterator<Item = T>> PeekIter<T, I> {
             current,
             next,
         }
-    }
-
-    pub const fn current(&self) -> Option<&T> {
-        self.current.as_ref()
-    }
-
-    pub const fn peek(&self) -> Option<&T> {
-        self.next.as_ref()
     }
 
     pub fn advance(&mut self) -> Option<T> {

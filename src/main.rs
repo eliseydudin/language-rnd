@@ -35,6 +35,18 @@ fn calculate_expr(expr: Expr) -> f64 {
                 _ => panic!("invalid operand"),
             }
         }
+        Expr::Call { object, params } => {
+            if let Expr::Identifier(name) = *object {
+                if name == "sin" {
+                    calculate_expr(*params).sin()
+                } else {
+                    todo!()
+                }
+            } else {
+                panic!()
+            }
+        }
+        _ => todo!(),
     }
 }
 
