@@ -8,6 +8,7 @@ use std::fmt::Display;
 pub enum ErrorRepr {
     Eof,
     UnknownCharacter(u8),
+    RepeatedDotInNumber,
 }
 
 impl fmt::Display for ErrorRepr {
@@ -15,6 +16,7 @@ impl fmt::Display for ErrorRepr {
         match self {
             Self::Eof => write!(f, "reached an unexpected eof"),
             Self::UnknownCharacter(c) => write!(f, "found an unknown character '{c}'"),
+            Self::RepeatedDotInNumber => write!(f, "dot repeated inside a number declaration"),
         }
     }
 }
@@ -259,10 +261,24 @@ impl<'a> Lexer<'a> {
 
     pub fn lex_number(&mut self) -> Result<Token<'a>, LexerError> {
         let start = self.position - 1;
+
+        let mut found_dot = false;
+
         while let Some(next) = self.advance() {
-            if next.is_ascii_digit() {
+            if next == b'.' {
+                if found_dot {
+                    return Err(LexerError::new(
+                        ErrorRepr::RepeatedDotInNumber,
+                        self.source_pos,
+                    ));
+                } else {
+                    found_dot = true;
+                    continue;
+                }
+            } else if next.is_ascii_digit() {
                 continue;
             }
+
             self.rewind();
             break;
         }
