@@ -1,1 +1,8 @@
-const a = cos(3.141592653589793) * 543;
+const a = 10;
+const b = round(
+    sin(
+        pi / 2
+    ) * cos(
+        pi + a
+    ) * a
+);

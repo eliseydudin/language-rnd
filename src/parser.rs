@@ -93,10 +93,19 @@ pub enum Expr<'src> {
     },
     Call {
         object: Box<Self>,
-        params: Box<Self>,
+        params: Vec<Self>,
     },
+    Tuple(Vec<Self>),
+    Unit, // same as rust's ()
 }
 
+impl<'a> From<Vec<Expr<'a>>> for Expr<'a> {
+    fn from(value: Vec<Expr<'a>>) -> Self {
+        Self::Tuple(value)
+    }
+}
+
+#[non_exhaustive]
 #[derive(Debug)]
 pub enum AstRepr<'src> {
     Const { name: &'src str, value: Expr<'src> },
@@ -169,19 +178,14 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
 
     pub fn parse_expr(&mut self, end: TokenRepr) -> ParserResult<Expr<'src>> {
         let curr = self.parse_value(true)?;
-        self.cont_expr_or_end(curr, end)
-
-        // match curr.repr {
-        //     TokenRepr::LParen => {
-        //         let parens = self.parse_expr(TokenRepr::RParen)?;
-        //         self.cont_expr_or_end(parens, end)
-        //     }
-        //     e if e == end => Err(throw_expected_expression(curr)),
-        //     _ => todo!(),
-        // }
+        self.cont_expr_or_end(curr, &[end]).map(|(_, e)| e)
     }
 
-    pub fn parse_identifier_or_call(&mut self, start: Expr<'src>) -> ParserResult<Expr<'src>> {
+    pub fn parse_identifier_or_call(
+        &mut self,
+        start: Expr<'src>,
+        allow_call: bool,
+    ) -> ParserResult<Expr<'src>> {
         let next = self.current()?;
 
         if next.repr == TokenRepr::Dot {
@@ -194,17 +198,17 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             self.advance()?;
             self.advance()?;
 
-            self.parse_identifier_or_call(access)
-        } else if next.repr == TokenRepr::LParen {
+            self.parse_identifier_or_call(access, allow_call)
+        } else if next.repr == TokenRepr::LParen && allow_call {
             self.advance()?;
 
-            let params = self.parse_expr(TokenRepr::RParen)?;
+            //let params = self.parse_expr(TokenRepr::RParen)?;
             let function_call = Expr::Call {
                 object: Box::new(start),
-                params: Box::new(params),
+                params: self.parse_tuple()?,
             };
 
-            self.parse_identifier_or_call(function_call)
+            self.parse_identifier_or_call(function_call, allow_call)
         } else {
             Ok(start)
         }
@@ -234,9 +238,16 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             TokenRepr::String => Ok(Expr::String(current.data)),
             TokenRepr::Identifier => {
                 let value = Expr::Identifier(current.data);
-                self.parse_identifier_or_call(value)
+                self.parse_identifier_or_call(value, true)
             }
-            TokenRepr::LParen => self.parse_expr(TokenRepr::RParen),
+            TokenRepr::LParen => {
+                let mut tuple = self.parse_tuple()?;
+                if tuple.len() == 1 {
+                    Ok(tuple.remove(0))
+                } else {
+                    Ok(tuple.into())
+                }
+            }
             TokenRepr::Minus if allow_unary => Ok(unary_expr(self.parse_value(false)?)),
             TokenRepr::Minus if !allow_unary => Err(throw_double_unary(current)),
             _ if allow_unary => Err(throw_unexpected_mult(current, EXPECTED)),
@@ -244,11 +255,32 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         }
     }
 
+    pub fn parse_tuple(&mut self) -> ParserResult<Vec<Expr<'src>>> {
+        let mut result = vec![];
+
+        loop {
+            if self.current().map(|a| a.repr) == Ok(TokenRepr::RParen) && result.len() == 0 {
+                self.advance()?;
+                return Ok(vec![Expr::Unit]);
+            }
+
+            let val = self.parse_value(true)?;
+            let (end, expr) = self.cont_expr_or_end(val, &[TokenRepr::Coma, TokenRepr::RParen])?;
+
+            result.push(expr);
+            if end == TokenRepr::RParen {
+                break;
+            }
+        }
+
+        Ok(result)
+    }
+
     pub fn cont_expr_or_end(
         &mut self,
         start: Expr<'src>,
-        end: TokenRepr,
-    ) -> ParserResult<Expr<'src>> {
+        end: &[TokenRepr],
+    ) -> ParserResult<(TokenRepr, Expr<'src>)> {
         let current = self.advance()?;
 
         match current.repr {
@@ -259,11 +291,11 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
 
             TokenRepr::Plus | TokenRepr::Minus => {
                 let next = self.parse_value(true)?;
-                let next = self.cont_expr_or_end(next, end)?;
-                Ok(binop_expr(start, current.repr, next))
+                let (end, next) = self.cont_expr_or_end(next, end)?;
+                Ok((end, binop_expr(start, current.repr, next)))
             }
 
-            e if e == end => Ok(start),
+            e if end.contains(&e) => Ok((e, start)),
 
             _ => Err(throw_unexpected_mult(
                 current,

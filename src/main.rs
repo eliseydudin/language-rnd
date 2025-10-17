@@ -1,8 +1,10 @@
-use core::error::Error;
 use core::fmt::Display;
-use lexer::TokenRepr;
-use parser::{AstRepr, Expr, IntoParser};
+use core::{error::Error, f64};
+use parser::IntoParser;
 
+use crate::environment::{Environment, Value};
+
+mod environment;
 mod lexer;
 mod parser;
 mod peek_iter;
@@ -17,54 +19,35 @@ fn display<T, E: Display>(t: Result<T, E>) -> Option<T> {
     }
 }
 
-fn calculate_expr(expr: Expr) -> f64 {
-    match expr {
-        Expr::Number(num) => num
-            .parse()
-            .expect("numbers parsed by the lexer are guaranteed to be valid integers"),
-        Expr::String(_) => todo!("cannot use strings in math expressions currently"),
-        Expr::Unary(e) => -calculate_expr(*e),
-        Expr::BinOp { left, op, right } => {
-            let left = calculate_expr(*left);
-            let right = calculate_expr(*right);
-            match op {
-                TokenRepr::Plus => left + right,
-                TokenRepr::Minus => left - right,
-                TokenRepr::Mult => left * right,
-                TokenRepr::Div => left / right,
-                _ => panic!("invalid operand"),
-            }
-        }
-        Expr::Call { object, params } => {
-            if let Expr::Identifier(name) = *object {
-                if name == "sin" {
-                    calculate_expr(*params).sin()
-                } else if name == "cos" {
-                    calculate_expr(*params).cos()
-                } else {
-                    todo!()
-                }
-            } else {
-                panic!()
-            }
-        }
-        _ => todo!(),
-    }
-}
-
 fn main() -> Result<(), Box<dyn Error>> {
     const FILE: &str = "./test.cofy";
 
     let source = std::fs::read_to_string(FILE)?;
-    lexer::Lexer::new(&source)
+    let ast = lexer::Lexer::new(&source)
         .filter_map(display)
         .into_parser()
         .filter_map(display)
-        .for_each(|ast| {
-            println!("{FILE}:{} {:#?}", ast.pos, ast.inner);
-            let AstRepr::Const { name, value } = ast.inner;
-            println!("const {name} = {}", calculate_expr(value));
-        });
+        .map(|a| a.inner);
+
+    let mut env = Environment::new();
+    env.push_function("sin", |mut args| {
+        let num = args.remove(0).unwrap_number();
+        Some(Value::Number(num.sin()))
+    });
+    env.push_function("cos", |mut args| {
+        let num = args.remove(0).unwrap_number();
+        Some(Value::Number(num.cos()))
+    });
+    env.push_function("round", |mut args| {
+        let num = args.remove(0).unwrap_number();
+        Some(Value::Number(num.round()))
+    });
+    env.push_constant("pi", Value::Number(f64::consts::PI));
+    env.interpret_ast(ast);
+
+    for (name, val) in env.constants {
+        println!("const {name} = {val:?};");
+    }
 
     Ok(())
 }
