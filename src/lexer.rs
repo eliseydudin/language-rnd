@@ -156,6 +156,8 @@ pub enum TokenRepr {
 
     Const,
     Fn,
+
+    Comment,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -315,6 +317,25 @@ impl<'a> Lexer<'a> {
         self.source.as_bytes().get(self.position).copied()
     }
 
+    pub fn lex_comment(&mut self) -> Token<'a> {
+        let start = self.position;
+        loop {
+            self.advance();
+            let last_pos = self
+                .last_source_pos
+                .expect("after calling advance last_pos is always Some");
+
+            if last_pos.line != self.source_pos.line {
+                // advanced to a new line
+                return Token::new(
+                    &self.source[start..self.position - 1],
+                    TokenRepr::Comment,
+                    self.last_source_pos.unwrap(),
+                );
+            }
+        }
+    }
+
     pub fn lex_fallback(&mut self, start: u8) -> Result<Token<'a>, LexerError> {
         let result = match start {
             b'(' => self.small_token(TokenRepr::LParen, 1),
@@ -337,7 +358,14 @@ impl<'a> Lexer<'a> {
             b'+' => self.small_token(TokenRepr::Plus, 1),
             b'-' => self.small_token(TokenRepr::Minus, 1),
             b'*' => self.small_token(TokenRepr::Mult, 1),
-            b'/' => self.small_token(TokenRepr::Div, 1),
+            b'/' => {
+                if self.current() == Some(b'/') {
+                    self.advance();
+                    self.lex_comment()
+                } else {
+                    self.small_token(TokenRepr::Div, 1)
+                }
+            }
 
             other => {
                 return Err(WithPos::new(

@@ -76,7 +76,7 @@ pub fn unary_expr(expr: Expr<'_>) -> Expr<'_> {
     Expr::Unary(Box::new(expr))
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Expr<'src> {
     Number(&'src str),
     String(&'src str),
@@ -105,10 +105,22 @@ impl<'a> From<Vec<Expr<'a>>> for Expr<'a> {
     }
 }
 
+type FunctionParams<'src> = Option<Vec<Expr<'src>>>;
+type FunctionBody<'src> = Vec<Expr<'src>>;
+
 #[non_exhaustive]
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum AstRepr<'src> {
-    Const { name: &'src str, value: Expr<'src> },
+    Const {
+        name: &'src str,
+        value: Expr<'src>,
+    },
+    Function {
+        name: &'src str,
+        params: FunctionParams<'src>,
+        body: FunctionBody<'src>,
+    },
+    Comment(&'src str),
 }
 
 pub type Ast<'a> = WithPos<AstRepr<'a>>;
@@ -305,6 +317,77 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             )),
         }
     }
+
+    fn parse_function_body_once(&mut self) {
+        todo!()
+    }
+
+    pub fn parse_function_body(&mut self) -> ParserResult<FunctionBody<'src>> {
+        let mut result = vec![];
+        loop {
+            let val = self.parse_value(true)?;
+            let (end, expr) =
+                self.cont_expr_or_end(val, &[TokenRepr::Arrow, TokenRepr::Semicolon])?;
+            result.push(expr);
+
+            match end {
+                TokenRepr::Arrow => continue,
+                TokenRepr::Semicolon => break,
+                _ => unreachable!(),
+            }
+        }
+
+        Ok(result)
+    }
+
+    pub fn parse_function_params(&mut self) -> ParserResult<FunctionParams<'src>> {
+        macro_rules! insert {
+            ($vec:ident, $data:expr) => {
+                match &mut $vec {
+                    None => {
+                        let new = vec![$data];
+                        $vec = Some(new);
+                    }
+                    Some(v) => v.push($data),
+                }
+            };
+        }
+
+        let mut result = None;
+        loop {
+            let next = self.current()?;
+            match next.repr {
+                TokenRepr::Set => return Ok(result),
+                TokenRepr::Identifier => insert!(result, Expr::Identifier(next.data)),
+                TokenRepr::Number => insert!(result, Expr::Number(next.data)),
+                TokenRepr::String => insert!(result, Expr::String(next.data)),
+                _ => {
+                    return Err(throw_unexpected_mult(
+                        next,
+                        &[
+                            TokenRepr::Set,
+                            TokenRepr::Identifier,
+                            TokenRepr::Number,
+                            TokenRepr::String,
+                        ],
+                    ));
+                }
+            }
+        }
+    }
+
+    pub fn parse_function(&mut self) -> ParserResult<Ast<'src>> {
+        let start = self.expect(TokenRepr::Fn)?;
+        let name = self.expect(TokenRepr::Identifier)?.data;
+        let params = self.parse_function_params()?;
+        self.expect(TokenRepr::Set)?;
+        let body = self.parse_function_body()?;
+
+        Ok(Ast::new(
+            AstRepr::Function { name, params, body },
+            start.pos,
+        ))
+    }
 }
 
 impl<'src, I: Iterator<Item = Token<'src>>> Iterator for Parser<'src, I> {
@@ -314,6 +397,11 @@ impl<'src, I: Iterator<Item = Token<'src>>> Iterator for Parser<'src, I> {
         let current = self.iter.current_copied()?;
         let res = match current.repr {
             TokenRepr::Const => self.parse_const(),
+            TokenRepr::Fn => self.parse_function(),
+            TokenRepr::Comment => {
+                let _ = self.advance();
+                Ok(Ast::new(AstRepr::Comment(current.data), current.pos))
+            }
             _ => todo!("{current:?}"),
         };
 
