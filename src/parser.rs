@@ -105,11 +105,11 @@ impl<'a> From<Vec<Expr<'a>>> for Expr<'a> {
     }
 }
 
-type FunctionParams<'src> = Option<Vec<Expr<'src>>>;
+type FunctionParams<'src> = Vec<Expr<'src>>;
 type FunctionBody<'src> = Vec<Expr<'src>>;
 
-#[non_exhaustive]
 #[derive(Debug, Clone)]
+#[expect(dead_code, reason = "ast repr isnt used currently")]
 pub enum AstRepr<'src> {
     Const {
         name: &'src str,
@@ -117,8 +117,13 @@ pub enum AstRepr<'src> {
     },
     Function {
         name: &'src str,
-        params: FunctionParams<'src>,
+        params: Option<FunctionParams<'src>>,
         body: FunctionBody<'src>,
+    },
+    FunctionPrototype {
+        name: &'src str,
+        params: Expr<'src>,
+        returns: Expr<'src>,
     },
     Comment(&'src str),
 }
@@ -318,10 +323,6 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         }
     }
 
-    fn parse_function_body_once(&mut self) {
-        todo!()
-    }
-
     pub fn parse_function_body(&mut self) -> ParserResult<FunctionBody<'src>> {
         let mut result = vec![];
         loop {
@@ -340,7 +341,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         Ok(result)
     }
 
-    pub fn parse_function_params(&mut self) -> ParserResult<FunctionParams<'src>> {
+    pub fn parse_function_params(&mut self) -> ParserResult<Option<FunctionParams<'src>>> {
         macro_rules! insert {
             ($vec:ident, $data:expr) => {
                 match &mut $vec {
@@ -355,7 +356,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
 
         let mut result = None;
         loop {
-            let next = self.current()?;
+            let next = self.advance()?;
             match next.repr {
                 TokenRepr::Set => return Ok(result),
                 TokenRepr::Identifier => insert!(result, Expr::Identifier(next.data)),
@@ -379,14 +380,35 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
     pub fn parse_function(&mut self) -> ParserResult<Ast<'src>> {
         let start = self.expect(TokenRepr::Fn)?;
         let name = self.expect(TokenRepr::Identifier)?.data;
-        let params = self.parse_function_params()?;
-        self.expect(TokenRepr::Set)?;
-        let body = self.parse_function_body()?;
 
-        Ok(Ast::new(
-            AstRepr::Function { name, params, body },
-            start.pos,
-        ))
+        let curr = self.current()?;
+
+        if curr.repr == TokenRepr::LParen {
+            self.advance()?;
+            let params = self.parse_tuple()?;
+            self.expect(TokenRepr::Arrow)?;
+            let returns = self.parse_value(false)?;
+            self.expect(TokenRepr::Semicolon)?;
+
+            Ok(Ast::new(
+                AstRepr::FunctionPrototype {
+                    name,
+                    params,
+                    returns,
+                },
+                start.pos,
+            ))
+        } else {
+            let params = self.parse_function_params()?;
+            // if we returned from `self.parse_function_params`
+            // it means that a `Set` was already found
+            let body = self.parse_function_body()?;
+
+            Ok(Ast::new(
+                AstRepr::Function { name, params, body },
+                start.pos,
+            ))
+        }
     }
 }
 

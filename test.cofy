@@ -1,3 +1,14 @@
-// 10
-/// ts is a comment
-// comment me twin :heart:
+fn fib (Number) => Number;
+// ^ this is a prototype, the thingy
+// which tells the interpreter what the
+// function takes in and what it returns
+
+fn fib 0 = 1;
+fn fib 1 = 1;
+// ^ these two are specialized cases
+// of `fib`
+
+fn fib n = fib(n - 1) + fib(n - 2);
+// ^ this is the generic implementation
+// it will be called when the parameter
+// of `fib` isn't 0 or 1

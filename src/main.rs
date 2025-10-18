@@ -11,7 +11,7 @@ mod peek_iter;
 fn display<T: Debug, E: Display>(t: Result<T, E>) -> Option<T> {
     match t {
         Ok(tok) => {
-            println!("some: {tok:?}");
+            //println!("some: {tok:?}");
             Some(tok)
         }
         Err(e) => {
