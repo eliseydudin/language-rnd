@@ -1,8 +1,15 @@
 const a = 10;
-const b = round(
-    sin(
-        pi / 2
-    ) * cos(
-        pi + a
-    ) * a
-);
+const b = round(sin(pi / 2) * cos(pi + a) * a);
+const c = sum(a, b, 20, 123123);
+
+// fn fib (Number) => Number;
+// ^ this declaration is optional, use it when returning an object
+// or stuff like that
+fn fib 0 = 1;
+fn fib 1 = 1;
+fn fib n = fib(n - 1) + fib (n - 2);
+
+fn composed_fn n = fib(n) 
+                  => sin
+                  => cos
+                  => debug;

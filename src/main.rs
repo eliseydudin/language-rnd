@@ -30,17 +30,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         .map(|a| a.inner);
 
     let mut env = Environment::new();
-    env.push_function("sin", |mut args| {
-        let num = args.remove(0).unwrap_number();
-        Some(Value::Number(num.sin()))
-    });
-    env.push_function("cos", |mut args| {
-        let num = args.remove(0).unwrap_number();
-        Some(Value::Number(num.cos()))
-    });
-    env.push_function("round", |mut args| {
-        let num = args.remove(0).unwrap_number();
-        Some(Value::Number(num.round()))
+    env.push_function("sin", |args| args.unwrap_number().sin().into());
+    env.push_function("cos", |args| args.unwrap_number().cos().into());
+    env.push_function("round", |args| args.unwrap_number().round().into());
+    env.push_function("sum", |args| {
+        let args = args.unwrap_tuple();
+        args.into_iter()
+            .reduce(|a, b| (a.unwrap_number() + b.unwrap_number()).into())
+            .expect("tuples are never unit")
     });
     env.push_constant("pi", Value::Number(f64::consts::PI));
     env.interpret_ast(ast);

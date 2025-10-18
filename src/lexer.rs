@@ -155,6 +155,7 @@ pub enum TokenRepr {
     Div,
 
     Const,
+    Fn,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,6 +179,7 @@ impl<'a> Token<'a> {
         // TODO
         let repr = match self.data {
             "const" => TokenRepr::Const,
+            "fn" => TokenRepr::Fn,
             _ => self.repr,
         };
 

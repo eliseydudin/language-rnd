@@ -93,7 +93,7 @@ pub enum Expr<'src> {
     },
     Call {
         object: Box<Self>,
-        params: Vec<Self>,
+        params: Box<Self>,
     },
     Tuple(Vec<Self>),
     Unit, // same as rust's ()
@@ -205,7 +205,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             //let params = self.parse_expr(TokenRepr::RParen)?;
             let function_call = Expr::Call {
                 object: Box::new(start),
-                params: self.parse_tuple()?,
+                params: Box::new(self.parse_tuple()?),
             };
 
             self.parse_identifier_or_call(function_call, allow_call)
@@ -240,14 +240,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
                 let value = Expr::Identifier(current.data);
                 self.parse_identifier_or_call(value, true)
             }
-            TokenRepr::LParen => {
-                let mut tuple = self.parse_tuple()?;
-                if tuple.len() == 1 {
-                    Ok(tuple.remove(0))
-                } else {
-                    Ok(tuple.into())
-                }
-            }
+            TokenRepr::LParen => self.parse_tuple(),
             TokenRepr::Minus if allow_unary => Ok(unary_expr(self.parse_value(false)?)),
             TokenRepr::Minus if !allow_unary => Err(throw_double_unary(current)),
             _ if allow_unary => Err(throw_unexpected_mult(current, EXPECTED)),
@@ -255,13 +248,13 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         }
     }
 
-    pub fn parse_tuple(&mut self) -> ParserResult<Vec<Expr<'src>>> {
+    pub fn parse_tuple(&mut self) -> ParserResult<Expr<'src>> {
         let mut result = vec![];
 
         loop {
             if self.current().map(|a| a.repr) == Ok(TokenRepr::RParen) && result.len() == 0 {
                 self.advance()?;
-                return Ok(vec![Expr::Unit]);
+                return Ok(Expr::Unit);
             }
 
             let val = self.parse_value(true)?;
@@ -273,7 +266,11 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             }
         }
 
-        Ok(result)
+        if result.len() == 1 {
+            Ok(result.remove(0))
+        } else {
+            Ok(Expr::Tuple(result))
+        }
     }
 
     pub fn cont_expr_or_end(

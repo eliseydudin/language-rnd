@@ -18,6 +18,13 @@ impl Value {
             _ => panic!("expected number"),
         }
     }
+
+    pub fn unwrap_tuple(self) -> Vec<Value> {
+        match self {
+            Self::Tuple(a) => a,
+            _ => panic!("expected a tuple"),
+        }
+    }
 }
 
 impl From<f64> for Value {
@@ -26,7 +33,7 @@ impl From<f64> for Value {
     }
 }
 
-type BuiltinFn = fn(Vec<Value>) -> Option<Value>;
+type BuiltinFn = fn(Value) -> Value;
 
 pub struct Environment<'src> {
     pub constants: HashMap<&'src str, Value>,
@@ -60,7 +67,10 @@ impl<'src> Environment<'src> {
 
     fn calculate_expr(&self, value: Expr<'src>) -> Value {
         match value {
-            Expr::String(_) | Expr::Access { .. } | Expr::Tuple(_) => todo!(),
+            Expr::String(_) | Expr::Access { .. } => todo!(),
+            Expr::Tuple(exprs) => {
+                Value::Tuple(exprs.into_iter().map(|e| self.calculate_expr(e)).collect())
+            }
             Expr::Unit => Value::Unit,
             Expr::BinOp { left, op, right } => {
                 let left = self.calculate_expr(*left).unwrap_number();
@@ -86,12 +96,7 @@ impl<'src> Environment<'src> {
                 };
 
                 if let Some(f) = self.functions.get(func) {
-                    let args = params
-                        .into_iter()
-                        .map(|expr| self.calculate_expr(expr))
-                        .collect();
-
-                    return f(args).expect("function failed");
+                    f(self.calculate_expr(*params))
                 } else {
                     panic!("no such function exists!")
                 }
