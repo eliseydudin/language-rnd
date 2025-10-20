@@ -125,7 +125,6 @@ pub enum AstRepr<'src> {
         params: Expr<'src>,
         returns: Expr<'src>,
     },
-    Comment(&'src str),
 }
 
 pub type Ast<'a> = WithPos<AstRepr<'a>>;
@@ -153,7 +152,14 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
     /// Get the current token in the iterator and advance it, if the current token is [`None`],
     /// return an EOF error.
     pub fn advance(&mut self) -> ParserResult<Token<'src>> {
-        self.iter.advance().ok_or_else(throw_eof_error)
+        while let Some(tok) = self.iter.advance() {
+            match tok.repr {
+                TokenRepr::Comment => continue,
+                _ => return Ok(tok),
+            }
+        }
+
+        Err(throw_eof_error())
     }
 
     /// Get the next token in the iterator, if the token is [`None`],
@@ -416,15 +422,17 @@ impl<'src, I: Iterator<Item = Token<'src>>> Iterator for Parser<'src, I> {
     type Item = ParserResult<Ast<'src>>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let current = self.iter.current_copied()?;
-        let res = match current.repr {
-            TokenRepr::Const => self.parse_const(),
-            TokenRepr::Fn => self.parse_function(),
-            TokenRepr::Comment => {
-                let _ = self.advance();
-                Ok(Ast::new(AstRepr::Comment(current.data), current.pos))
-            }
-            _ => todo!("{current:?}"),
+        let res = loop {
+            let current = self.iter.current_copied()?;
+            match current.repr {
+                TokenRepr::Const => break self.parse_const(),
+                TokenRepr::Fn => break self.parse_function(),
+                TokenRepr::Comment => {
+                    let _ = self.advance();
+                    continue;
+                }
+                _ => todo!("{current:?}"),
+            };
         };
 
         Some(res)

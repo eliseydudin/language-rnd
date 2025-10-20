@@ -1,0 +1,78 @@
+// this file contains basic grammar for the language
+// that will be implemented in the future
+
+fn fib (number) => number;
+// ^ this is a prototype, the thingy
+// which tells the interpreter what the
+// function takes in and what it returns
+
+fn fib 0 = 1;
+fn fib 1 = 1;
+// ^ these two are specialized cases
+// of `fib`
+
+fn fib n = fib(n - 1) + fib(n - 2);
+// ^ this is the generic implementation
+// it will be called when the parameter
+// of `fib` isn't 0 or 1
+
+module loop {
+    import builtin.never; // never means that the function is never going to return
+
+    // Represents whether `run` should stop or continue 
+    // the current loop. Accessing fields is forbidden, use `break` or 
+    // `continue` to create new instances.
+    @lang(loop_state)
+    @private_constructor
+    type LoopState<T, R> = Continue(T) | Break(R);
+
+    // Represents a type that means that the loop should continue running forever.
+    // If you are using this with `run` consider using `forever` instead.
+    @lang(forever) type Forever = ();
+
+    // Break the current loop and return `r`.
+    fn break r = LoopState.Break(r);
+    // Continue the current loop with the state `c`.
+    fn continue c = LoopState.Continue(c);
+
+    // Run a function in a loop until the given function 
+    // returns `LoopState.Break(...)`. If your function doesn't 
+    // a lot of iteration use recursion instead.
+    // ```
+    // fn loop_inner 0 sum = loop.break(sum);
+    // fn loop_inner i sum = loop.continue((i - 1, sum + i));
+    // const sum_of_ten = loop.run((10, 0), &loop_inner);
+    // // the value of this `const` is 55. 
+    // ```
+    @lang(loop_run) fn run<T, R> (T, (T) => LoopState<T, R>) => R;
+    // Run a function in a loop & pass state between iterations. 
+    @lang(loop_forever) fn forever<S> (S) => S => never;
+
+    export { LoopState, Forever, break, continue, run, forever };
+};
+
+// range is the type of `begin..end` expressions
+// IO is an opaque builtin types that represents 
+// the handle on input/output, having a system
+// like this prevents `const`s from using print/input
+// statements, thus forbidding mutability
+fn fizz_buzz (IO, number, range<number>) => IO; 
+
+// its a good practice to return IOs from functions that take IO as a parameter
+// because that allows chaining functions: debug()
+fn fizz_buzz io, num, range = 
+    if !has(range, num): return io else num;
+    => if $ % 15 == 0: debugln(io, "Fizz Buzz")
+        else if $ % 3 == 0: debugln(io, "Fizz")
+        else if $ % 5 == 0: debugln(io, "Buzz")
+        else debugln(io, stringify($))
+    => fizz_buzz(num + 1, range);
+
+// => places the first parameter of a function
+// eg 10 => sin, however this doesnt work with mutliple function calls
+// or when you want to place the result as the second/third/etc 
+// param, use $ in these cases, eg 10 => sin($) + cos($) is sin(10) + cos(10)
+//
+// `lock_stdout` returns an IO that allows you to write to stdout
+// IO is buffered, `close` flushes the IO and drops it in memory
+fn main = lock_stdout => fizz_buzz(1, 1..15) => close;
