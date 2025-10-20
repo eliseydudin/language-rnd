@@ -76,3 +76,88 @@ fn fizz_buzz io, num, range =
 // `lock_stdout` returns an IO that allows you to write to stdout
 // IO is buffered, `close` flushes the IO and drops it in memory
 fn main = lock_stdout => fizz_buzz(1, 1..15) => close;
+
+type Option<T> = Some(T) | None;
+
+// convert - allows to convert between objects of different types
+@derive(Convert)
+type Example = {
+    inner_opt: Option<IO>,
+    inner: number,
+};
+
+// traits provide a way to define common behaviour between types
+// here you can access the defined functions via Foo
+// eg. `const a = Foo.default<T>()` where T is a type that implements `Foo`
+// `const b = Foo.bar(a)`
+// `self` refers to the implementing type
+trait Foo = {
+    fn default () => self;
+    fn bar (self) => self;
+};
+
+// this implements Foo for Example
+impl Example < Foo = {
+    fn default = self { inner_opt: None, inner: 0 };
+    fn bar caller = self { inner_opt: caller.inner_opt, inner: caller.inner + 1 };
+};
+
+const example = Foo.default<Example>(); // { None, 0 }
+const example2 = Foo.bar(example); // { None, 1 }
+
+@derive(Convert)
+type SmallerExample = {
+    inner: number,
+};
+
+impl SmallerExample < Foo {
+    fn default = self { inner: 0 };
+    fn bar caller = self { inner: caller.inner + 1 };
+}
+
+fn convert_normal_to_small (Example) => SmallerExample;
+fn convert_normal_to_small normal = 
+    convert_to(normal, &SmallerExample) => unwrap;
+
+// `convert_to` returns an option, because in some cases 
+// the first parameter may not always have enough valid fields
+// to be converted into a parameter of the given type
+// so we call unwrap; unwrap either returns a valid value
+// or panics (stops the whole program)
+// the `&` operator is used for meta functions, those that can 
+// be used to achieve compiler magic and stuff like that
+// here &SmallerExample returns an expression of type `Type`
+// that contains all the info about the object's type
+// previously in this file & was used to pass function as a parameter
+
+// coming up next..
+// trait objects
+// if an object implements a trait then it can be converted into a 
+// trait objects, this is a unique type that saves the implementation
+// detail of the original object
+
+// dyn_object is of type dynamic<Foo>
+const dyn_object = Foo.default<SmallerExample> => dyn.make_dynamic(&Foo);
+// dyn_object_bared is also of type Dynamic<Foo>
+const dyn_object_bared = Foo.bar(dyn_object);
+
+// you can access the original type of dyn_object_bared
+const true_type_name = dyn.type_of(dyn_object).name; // is "SmallerExample"
+// you can also convert back to the original value
+const original = 
+    dyn.try_make_static<SmallerExample>(dyn_object) 
+    => unwrap; // is of type "SmallerExample"
+
+// pattern matching
+type FooBar = Foo(number) | Bar(string) | IFoo(IO) | Other;
+
+fn func (FooBar) => string;
+fn func foobar = match foobar 
+    case Foo(n): $"foobar is the number {n}",
+    case Bar(s): $"foobar is a string \"{s}\"",
+    case IFoo(_): $"foobar is an IO instance",
+    case Other: $"foobar is uhhh";
+
+const foobar = FooBar.Foo(10);
+fn main = lock_stdout => foobar => debugln => close; 
+// ^ will print "foobar is the number 10"
