@@ -147,13 +147,13 @@ pub enum AstRepr<'src> {
     },
     Function {
         name: &'src str,
-        type_params: Option<Type<'src>>,
+        type_params: Type<'src>,
         params: FunctionParams<'src>,
         body: FunctionBody<'src>,
     },
     FunctionPrototype {
         name: &'src str,
-        type_params: Option<Type<'src>>,
+        type_params: Type<'src>,
         type_of: Type<'src>,
     },
 }
@@ -267,7 +267,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             Ok(function_call)
         } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
             let type_params = self.try_parse_type_params()?;
-            self.parse_identifier_or_call(start, allow_call, type_params)
+            self.parse_identifier_or_call(start, allow_call, Some(type_params))
         } else {
             Ok(start)
         }
@@ -477,16 +477,16 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         )
     }
 
-    pub fn try_parse_type_params(&mut self) -> ParserResult<Option<Type<'src>>> {
+    pub fn try_parse_type_params(&mut self) -> ParserResult<Type<'src>> {
         let curr = self.current()?;
         if curr.repr != TokenRepr::LAngle {
-            return Ok(None);
+            return Ok(Type::Unit);
         } else {
             self.advance()?;
         }
 
         let result = self.try_parse_type_tuple(&[TokenRepr::RAngle])?;
-        Ok(Some(Type::Tuple(result)))
+        Ok(Type::Tuple(result))
     }
 
     fn try_parse_function_return(&mut self) -> ParserResult<Type<'src>> {
@@ -623,7 +623,7 @@ mod tests {
             proto,
             AstRepr::FunctionPrototype {
                 name: "variant",
-                type_params: Some(Type::Tuple(vec![Type::Plain("T")])),
+                type_params: Type::Tuple(vec![Type::Plain("T")]),
                 type_of: Type::Function {
                     params: Box::new(Type::Tuple(vec![Type::Plain("T")])),
                     returns: Box::new(Type::Plain("T"))
@@ -635,7 +635,7 @@ mod tests {
             generic,
             AstRepr::Function {
                 name: "variant",
-                type_params: Some(Type::Tuple(vec![Type::Plain("T")])),
+                type_params: Type::Tuple(vec![Type::Plain("T")]),
                 params: Some(vec![Expr::Identifier("t")]),
                 body: vec![Expr::Identifier("t")]
             }

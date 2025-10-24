@@ -1,0 +1,57 @@
+// all this is the module `builtin`, it gets imported into every module (file)
+// of the language
+
+@builtin type int = ();
+@builtin type uint = ();
+@builtin type float = ();
+@builtin type string = ();
+
+@builtin trait Private = ();
+@builtin trait Public = ();
+
+type Option<T> = Some(T) | None;
+type Result<T, E> = Ok(T) | Err(E);
+
+module str {
+    @builtin type ParseError = { .. };
+
+    @builtin fn len (string) => uint;
+    @builtin fn parse<T: Public> (string) => Result<T, ParseError>;
+    @builtin fn split (string, string) => [string];
+
+    // TODO
+
+    export { * };
+};
+
+module math {
+    @builtin type Angle = Deg(float) | Rad(float);
+
+    @builtin fn sin (Angle) => float;
+    @builtin fn cos (Angle) => float;
+    @builtin fn safe_div (float, float) => Option<float>;
+
+    // TODO
+
+    export { * };
+};
+
+module io {
+    @builtin type WriteIO = { .. };
+    @builtin type ReadIO = { .. };
+    @builtin type IO = { write: WriteIO, read: ReadIO };
+    @builtin type IOError = { .. };
+
+    @builtin fn std () => IO;
+    @builtin fn std_safe () => Option<IO>;
+
+    @builtin fn read<T: Public> (IO) => Result<(T, IO), IOError>;
+    @builtin fn write<T: Public> (IO, T) => Result<IO, IOError>;
+    @builtin fn flush (IO) => IO;
+    @builtin fn close (IO) => ();
+    @builtin fn close_and_then<T> (IO, T) => T;
+
+    // TODO
+
+    export { * };
+};
