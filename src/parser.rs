@@ -1,7 +1,4 @@
-use crate::{
-    lexer::{SourcePosition, Token, TokenRepr, WithPos, WithPosOrEof},
-    peek_iter::PeekIter,
-};
+use crate::{PeekIter, SourcePosition, Token, TokenRepr, WithPos, WithPosOrEof};
 use arrayvec::ArrayVec;
 use core::{error, fmt};
 
@@ -142,8 +139,7 @@ impl<'a> From<Vec<Expr<'a>>> for Expr<'a> {
 type FunctionParams<'src> = Option<Vec<Expr<'src>>>;
 type FunctionBody<'src> = Vec<Expr<'src>>;
 
-#[derive(Debug, Clone)]
-#[expect(dead_code, reason = "ast repr isnt used currently")]
+#[derive(Debug, Clone, PartialEq)]
 pub enum AstRepr<'src> {
     Const {
         name: &'src str,
@@ -584,5 +580,65 @@ pub trait IntoParser<'s>: Iterator<Item = Token<'s>> + Sized {
 impl<'s, I: Iterator<Item = Token<'s>>> IntoParser<'s> for I {
     fn into_parser(self) -> Parser<'s, Self> {
         Parser::new(PeekIter::new(self))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{AstRepr, Expr, IntoParser, Type};
+
+    macro_rules! parse_file {
+        ($file:literal) => {
+            $crate::Lexer::new(include_str!($file))
+                .map(|tok| tok.expect("invalid token"))
+                .into_parser()
+                .map(|a| a.expect("invalid ast").inner)
+                .collect::<Vec<_>>()
+        };
+    }
+
+    #[test]
+    fn fib_test() {
+        let ast = parse_file!("../test/fib.cofy");
+        let (prototype, impl_0, impl_1, generic) = match &ast[..] {
+            [a, b, c, d] => (a, b, c, d),
+            _ => panic!(),
+        };
+
+        assert!(matches!(prototype, AstRepr::FunctionPrototype { .. }));
+        assert!(matches!(impl_0, AstRepr::Function { name: "fib", .. }));
+        assert!(matches!(impl_1, AstRepr::Function { name: "fib", .. }));
+        assert!(matches!(generic, AstRepr::Function { name: "fib", .. }));
+    }
+
+    #[test]
+    fn templates_test() {
+        let ast = parse_file!("../test/template.cofy");
+        let (proto, generic) = match &ast[..] {
+            [a, b] => (a.clone(), b.clone()),
+            _ => panic!("{:#?}", ast),
+        };
+
+        assert_eq!(
+            proto,
+            AstRepr::FunctionPrototype {
+                name: "variant",
+                type_params: Some(Type::Tuple(vec![Type::Plain("T")])),
+                type_of: Type::Function {
+                    params: Box::new(Type::Tuple(vec![Type::Plain("T")])),
+                    returns: Box::new(Type::Plain("T"))
+                }
+            }
+        );
+
+        assert_eq!(
+            generic,
+            AstRepr::Function {
+                name: "variant",
+                type_params: Some(Type::Tuple(vec![Type::Plain("T")])),
+                params: Some(vec![Expr::Identifier("t")]),
+                body: vec![Expr::Identifier("t")]
+            }
+        );
     }
 }

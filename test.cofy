@@ -1,1 +1,0 @@
-const a = variadic<int, double>(10);

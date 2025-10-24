@@ -1,0 +1,2 @@
+fn variant<T> (T) => T;
+fn variant<T> t = t;
