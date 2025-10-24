@@ -130,24 +130,6 @@ fn convert_normal_to_small normal =
 // that contains all the info about the object's type
 // previously in this file & was used to pass function as a parameter
 
-// coming up next..
-// trait objects
-// if an object implements a trait then it can be converted into a 
-// trait objects, this is a unique type that saves the implementation
-// detail of the original object
-
-// dyn_object is of type dynamic<Foo>
-const dyn_object = Foo.default<SmallerExample> => dyn.make_dynamic(&Foo);
-// dyn_object_bared is also of type Dynamic<Foo>
-const dyn_object_bared = Foo.bar(dyn_object);
-
-// you can access the original type of dyn_object_bared
-const true_type_name = dyn.type_of(dyn_object).name; // is "SmallerExample"
-// you can also convert back to the original value
-const original = 
-    dyn.try_make_static<SmallerExample>(dyn_object) 
-    => unwrap; // is of type "SmallerExample"
-
 // pattern matching
 type FooBar = Foo(number) | Bar(string) | IFoo(IO) | Other;
 
@@ -161,3 +143,79 @@ fn func foobar = match foobar
 const foobar = FooBar.Foo(10);
 fn main = lock_stdout => foobar => debugln => close; 
 // ^ will print "foobar is the number 10"
+
+// this is an interface, it is its own type
+// that is a combination of several traits,
+// an interface contains the object it was built from 
+// and the various implementation details
+// for example here `number` is an interface that requires all
+// the various traits that get associated with numbers
+interface number = Add & Sub & Div & Mult & Display & Round;
+
+// this trait is defined by the language so it can be used 
+// in compiler magic, essentially any expression like `a + b`
+// gets resolved to `Add.add(a, b)`
+trait Add {
+    fn add (self, self) => self;
+}
+
+// an `int` or a `float` could be turned into a `number`
+const num = number(10);
+const num2 = number(5.5);
+// const result = num + num2; 
+// ^ this will throw an error because `add` is strict
+const num3 = number(5.1);
+const result = num2 + num2;
+// result will have the type number, which is resolved to 
+// interface<Add, Sub, Div, Mult, Display, Round>, and actually
+// contains an object of type `float` inside, the value of the 
+// float is 10.6
+
+// when interfaces are declared with a unit it means that
+// every object can be converted into this interface
+interface any = ();
+
+// interface<> objects can be cast back into the 
+// original objects
+import dyn; // fn cast<T> (interface<()>) => Option<T>
+const ten_point_six = unwrap(cast<float>(result));
+// ^ float, has the value 10.6
+
+// file handling 
+@no_copy
+@private_constructor
+type IO = { ... };
+type IOError = { ... };
+@no_copy
+@private_constructor
+type File = { ... };
+
+trait WriteIO = {
+    fn write (self, bytes) => Result<int, IOError>;
+    fn flush (self) => Result<(), IOError>;
+};
+// no copy is a trait implemented by @no_copy types
+interface writable = WriteIO + NoCopy;
+
+fn io_from_writer (writable) => IO;
+// opens a file to write to
+fn open_file (Path) => Result<File, IOError>; 
+
+// this function takes a path to a file and writes an array into it
+fn write_array_to_file (Path, [displayable]) => Result<(), IOError>;
+fn write_array_to_file path array = 
+    // ? either returns from the function with this error
+    // or returns the good value
+    open_file(path)? 
+    => io_from_writer 
+    => make_buffered // buffered writing to make less os calls overall
+    // write => Result.Ok(io)
+    => write("[ ")?
+    // iterable, state, function
+    => loop.for_each(array, $, |io, num| write(io?, f"{num}, "))?
+    => write("]")?
+    => close 
+    => Result.Ok(());
+
+fn test<T> (T) => T;
+fn test<T> t = dyn.try_cast<Display>(t) => unwrap => global_debug;

@@ -1,7 +1,8 @@
 use crate::{
-    lexer::{Token, TokenRepr, WithPos, WithPosOrEof},
+    lexer::{SourcePosition, Token, TokenRepr, WithPos, WithPosOrEof},
     peek_iter::PeekIter,
 };
+use arrayvec::ArrayVec;
 use core::{error, fmt};
 
 #[derive(Debug, PartialEq)]
@@ -13,9 +14,25 @@ pub enum ErrorRepr {
     },
     UnexpectedMult {
         found: TokenRepr,
-        expected: &'static [TokenRepr],
+        expected: ArrayVec<TokenRepr, 16>,
     },
     DoubleUnary,
+    UnexpectedParameterType,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum Type<'src> {
+    /// ()
+    Unit,
+    /// (T, B, number)
+    Tuple(Vec<Type<'src>>),
+    /// (<params>) => <returns>
+    Function {
+        params: Box<Type<'src>>,
+        returns: Box<Type<'src>>,
+    },
+    // T
+    Plain(&'src str),
 }
 
 impl fmt::Display for ErrorRepr {
@@ -38,6 +55,10 @@ impl fmt::Display for ErrorRepr {
                 write!(f, " found {found:?}")
             }
             Self::DoubleUnary => write!(f, "an unary expression repeated 2 times is not allowed"),
+            Self::UnexpectedParameterType => write!(
+                f,
+                "while parsing an expression of type <T, A, B...> found an expression that isnt an identifier"
+            ),
         }
     }
 }
@@ -50,7 +71,19 @@ pub const fn throw_eof_error() -> ParserError {
     WithPosOrEof::Eof(ErrorRepr::Eof)
 }
 
-pub const fn throw_unexpected_mult(found: Token, expected: &'static [TokenRepr]) -> ParserError {
+pub fn throw_unexpected_mult(found: Token, expected_toks: impl AsRef<[TokenRepr]>) -> ParserError {
+    let mut expected = ArrayVec::new();
+    for tok in expected_toks.as_ref() {
+        expected.push(*tok)
+    }
+
+    throw_unexpected_mult_array(found, expected)
+}
+
+pub const fn throw_unexpected_mult_array(
+    found: Token,
+    expected: ArrayVec<TokenRepr, 16>,
+) -> ParserError {
     WithPosOrEof::Pos(WithPos::new(
         ErrorRepr::UnexpectedMult {
             found: found.repr,
@@ -105,7 +138,7 @@ impl<'a> From<Vec<Expr<'a>>> for Expr<'a> {
     }
 }
 
-type FunctionParams<'src> = Vec<Expr<'src>>;
+type FunctionParams<'src> = Option<Vec<Expr<'src>>>;
 type FunctionBody<'src> = Vec<Expr<'src>>;
 
 #[derive(Debug, Clone)]
@@ -117,13 +150,14 @@ pub enum AstRepr<'src> {
     },
     Function {
         name: &'src str,
-        params: Option<FunctionParams<'src>>,
+        type_params: Option<Type<'src>>,
+        params: FunctionParams<'src>,
         body: FunctionBody<'src>,
     },
     FunctionPrototype {
         name: &'src str,
-        params: Expr<'src>,
-        returns: Expr<'src>,
+        type_params: Option<Type<'src>>,
+        type_of: Type<'src>,
     },
 }
 
@@ -296,6 +330,44 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         }
     }
 
+    pub fn parse_tuple_with<T, F>(&mut self, func: F, endings: &[TokenRepr]) -> ParserResult<Vec<T>>
+    where
+        F: Fn(Expr<'src>, SourcePosition) -> ParserResult<T>,
+    {
+        if self
+            .current()
+            .map(|a| a.repr == TokenRepr::LParen)
+            .unwrap_or(false)
+        {
+            self.advance()?;
+        }
+
+        let mut result = vec![];
+        let mut cont_expr_ends: ArrayVec<TokenRepr, 16> =
+            ArrayVec::from_iter(endings.into_iter().map(|a| *a));
+        cont_expr_ends.push(TokenRepr::Coma);
+
+        loop {
+            if self.current().map(|a| endings.contains(&a.repr)) == Ok(true) {
+                self.advance()?;
+                return Ok(result);
+            }
+
+            let val = self.parse_value(true)?;
+
+            let (e, expr) = self.cont_expr_or_end(val, &cont_expr_ends)?;
+            let pos = self.current()?.pos;
+
+            result.push(func(expr, pos)?);
+
+            if endings.contains(&e) {
+                break;
+            }
+        }
+
+        Ok(result)
+    }
+
     pub fn cont_expr_or_end(
         &mut self,
         start: Expr<'src>,
@@ -317,15 +389,19 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
 
             e if end.contains(&e) => Ok((e, start)),
 
-            _ => Err(throw_unexpected_mult(
-                current,
-                &[
-                    TokenRepr::Mult,
-                    TokenRepr::Div,
-                    TokenRepr::Plus,
-                    TokenRepr::Minus,
-                ],
-            )),
+            _ => {
+                let mut res = ArrayVec::new();
+                res.push(TokenRepr::Mult);
+                res.push(TokenRepr::Div);
+                res.push(TokenRepr::Plus);
+                res.push(TokenRepr::Minus);
+
+                for r in end {
+                    res.push(*r);
+                }
+
+                Err(throw_unexpected_mult_array(current, res))
+            }
         }
     }
 
@@ -347,7 +423,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         Ok(result)
     }
 
-    pub fn parse_function_params(&mut self) -> ParserResult<Option<FunctionParams<'src>>> {
+    pub fn parse_function_params(&mut self) -> ParserResult<FunctionParams<'src>> {
         macro_rules! insert {
             ($vec:ident, $data:expr) => {
                 match &mut $vec {
@@ -383,24 +459,75 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         }
     }
 
+    fn try_parse_type_tuple(&mut self, end: &[TokenRepr]) -> ParserResult<Vec<Type<'src>>> {
+        self.parse_tuple_with(
+            |expr, pos| {
+                if let Expr::Identifier(name) = expr {
+                    Ok(Type::Plain(name))
+                } else {
+                    Err(ParserError::Pos(WithPos::new(
+                        ErrorRepr::UnexpectedParameterType,
+                        pos,
+                    )))
+                }
+            },
+            end,
+        )
+    }
+
+    pub fn try_parse_type_params(&mut self) -> ParserResult<Option<Type<'src>>> {
+        let curr = self.current()?;
+        if curr.repr != TokenRepr::LAngle {
+            return Ok(None);
+        } else {
+            self.advance()?;
+        }
+
+        let result = self.try_parse_type_tuple(&[TokenRepr::RAngle])?;
+        Ok(Some(Type::Tuple(result)))
+    }
+
+    fn try_parse_function_return(&mut self) -> ParserResult<Type<'src>> {
+        if self.current()?.repr == TokenRepr::LParen {
+            Ok(Type::Tuple(self.try_parse_type_tuple(&[
+                TokenRepr::RParen,
+                TokenRepr::Semicolon,
+            ])?))
+        } else {
+            let ty = self.expect(TokenRepr::Identifier)?.data;
+            Ok(Type::Plain(ty))
+        }
+    }
+
+    pub fn try_parse_function_type(&mut self) -> ParserResult<Type<'src>> {
+        self.advance()?;
+        let params = self.try_parse_type_tuple(&[TokenRepr::RParen])?;
+        let params = Box::new(if params.len() == 0 {
+            Type::Unit
+        } else {
+            Type::Tuple(params)
+        });
+
+        self.expect(TokenRepr::Arrow)?;
+        let returns = Box::new(self.try_parse_function_return()?);
+        self.expect(TokenRepr::Semicolon)?;
+
+        Ok(Type::Function { params, returns })
+    }
+
     pub fn parse_function(&mut self) -> ParserResult<Ast<'src>> {
         let start = self.expect(TokenRepr::Fn)?;
         let name = self.expect(TokenRepr::Identifier)?.data;
+        let type_params = self.try_parse_type_params()?;
 
         let curr = self.current()?;
-
         if curr.repr == TokenRepr::LParen {
-            self.advance()?;
-            let params = self.parse_tuple()?;
-            self.expect(TokenRepr::Arrow)?;
-            let returns = self.parse_value(false)?;
-            self.expect(TokenRepr::Semicolon)?;
-
+            let type_of = self.try_parse_function_type()?;
             Ok(Ast::new(
                 AstRepr::FunctionPrototype {
                     name,
-                    params,
-                    returns,
+                    type_params,
+                    type_of,
                 },
                 start.pos,
             ))
@@ -411,7 +538,12 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             let body = self.parse_function_body()?;
 
             Ok(Ast::new(
-                AstRepr::Function { name, params, body },
+                AstRepr::Function {
+                    name,
+                    params,
+                    body,
+                    type_params,
+                },
                 start.pos,
             ))
         }

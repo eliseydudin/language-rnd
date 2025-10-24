@@ -1,3 +1,8 @@
-fn len (String) => Number;
-fn len str = len(str);
-// beebe
+fn variadic<T> (T) => T;
+fn variadic2<T, A> (T) => (T, A);
+fn variadic3<T, A, B> (T, A, B) => (T);
+
+fn variadic<T> t = 
+    variadic(t)
+    => variadic2
+    => variadic3;
