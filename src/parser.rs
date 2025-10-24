@@ -127,6 +127,7 @@ pub enum Expr<'src> {
     Call {
         object: Box<Self>,
         params: Box<Self>,
+        type_params: Option<Type<'src>>,
     },
     Tuple(Vec<Self>),
     Unit, // same as rust's ()
@@ -242,6 +243,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         &mut self,
         start: Expr<'src>,
         allow_call: bool,
+        type_params: Option<Type<'src>>,
     ) -> ParserResult<Expr<'src>> {
         let next = self.current()?;
 
@@ -255,7 +257,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             self.advance()?;
             self.advance()?;
 
-            self.parse_identifier_or_call(access, allow_call)
+            self.parse_identifier_or_call(access, allow_call, type_params)
         } else if next.repr == TokenRepr::LParen && allow_call {
             self.advance()?;
 
@@ -263,9 +265,13 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             let function_call = Expr::Call {
                 object: Box::new(start),
                 params: Box::new(self.parse_tuple()?),
+                type_params,
             };
 
-            self.parse_identifier_or_call(function_call, allow_call)
+            Ok(function_call)
+        } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
+            let type_params = self.try_parse_type_params()?;
+            self.parse_identifier_or_call(start, allow_call, type_params)
         } else {
             Ok(start)
         }
@@ -295,7 +301,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             TokenRepr::String => Ok(Expr::String(current.data)),
             TokenRepr::Identifier => {
                 let value = Expr::Identifier(current.data);
-                self.parse_identifier_or_call(value, true)
+                self.parse_identifier_or_call(value, true, None)
             }
             TokenRepr::LParen => self.parse_tuple(),
             TokenRepr::Minus if allow_unary => Ok(unary_expr(self.parse_value(false)?)),
