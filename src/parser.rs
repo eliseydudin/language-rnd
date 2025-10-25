@@ -1,5 +1,6 @@
 use crate::{PeekIter, SourcePosition, Token, TokenRepr, WithPos, WithPosOrEof};
 use arrayvec::ArrayVec;
+use bumpalo::{Bump, boxed::Box, collections::Vec};
 use core::{error, fmt};
 
 #[derive(Debug, PartialEq)]
@@ -17,16 +18,16 @@ pub enum ErrorRepr {
     UnexpectedParameterType,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum Type<'src> {
+#[derive(Debug, PartialEq)]
+pub enum Type<'src, 'b> {
     /// ()
     Unit,
     /// (T, B, number)
-    Tuple(Vec<Type<'src>>),
+    Tuple(Vec<'b, Self>),
     /// (<params>) => <returns>
     Function {
-        params: Box<Type<'src>>,
-        returns: Box<Type<'src>>,
+        params: Box<'b, Self>,
+        returns: Box<'b, Self>,
     },
     // T
     Plain(&'src str),
@@ -94,84 +95,90 @@ pub const fn throw_double_unary(tok: Token) -> ParserError {
     WithPosOrEof::Pos(WithPos::new(ErrorRepr::DoubleUnary, tok.pos))
 }
 
-pub fn binop_expr<'a>(left: Expr<'a>, op: TokenRepr, right: Expr<'a>) -> Expr<'a> {
+pub fn binop_expr<'a, 'b>(
+    bump: &'b Bump,
+    left: Expr<'a, 'b>,
+    op: TokenRepr,
+    right: Expr<'a, 'b>,
+) -> Expr<'a, 'b> {
     Expr::BinOp {
-        left: Box::new(left),
+        left: Box::new_in(left, bump),
         op,
-        right: Box::new(right),
+        right: Box::new_in(right, bump),
     }
 }
 
-pub fn unary_expr(expr: Expr<'_>) -> Expr<'_> {
-    Expr::Unary(Box::new(expr))
+pub fn unary_expr<'a, 'b>(bump: &'b Bump, expr: Expr<'a, 'b>) -> Expr<'a, 'b> {
+    Expr::Unary(Box::new_in(expr, bump))
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub enum Expr<'src> {
+#[derive(Debug, PartialEq)]
+pub enum Expr<'src, 'b> {
     Number(&'src str),
     String(&'src str),
     Identifier(&'src str),
     BinOp {
-        left: Box<Self>,
+        left: Box<'b, Self>,
         op: TokenRepr,
-        right: Box<Self>,
+        right: Box<'b, Self>,
     },
-    Unary(Box<Self>),
+    Unary(Box<'b, Self>),
     Access {
-        object: Box<Self>,
+        object: Box<'b, Self>,
         property: &'src str,
     },
     Call {
-        object: Box<Self>,
-        params: Box<Self>,
-        type_params: Option<Type<'src>>,
+        object: Box<'b, Self>,
+        params: Box<'b, Self>,
+        type_params: Option<Type<'src, 'b>>,
     },
-    Tuple(Vec<Self>),
+    Tuple(Vec<'b, Self>),
     Unit, // same as rust's ()
 }
 
-impl<'a> From<Vec<Expr<'a>>> for Expr<'a> {
-    fn from(value: Vec<Expr<'a>>) -> Self {
+impl<'a, 'b> From<Vec<'b, Expr<'a, 'b>>> for Expr<'a, 'b> {
+    fn from(value: Vec<'b, Expr<'a, 'b>>) -> Self {
         Self::Tuple(value)
     }
 }
 
-type FunctionParams<'src> = Option<Vec<Expr<'src>>>;
-type FunctionBody<'src> = Vec<Expr<'src>>;
+type FunctionParams<'src, 'b> = Option<Vec<'b, Expr<'src, 'b>>>;
+type FunctionBody<'src, 'b> = Vec<'b, Expr<'src, 'b>>;
 
-#[derive(Debug, Clone, PartialEq)]
-pub enum AstRepr<'src> {
+#[derive(Debug, PartialEq)]
+pub enum AstRepr<'src, 'b> {
     Const {
         name: &'src str,
-        value: Expr<'src>,
+        value: Expr<'src, 'b>,
     },
     Function {
         name: &'src str,
-        type_params: Type<'src>,
-        params: FunctionParams<'src>,
-        body: FunctionBody<'src>,
+        type_params: Type<'src, 'b>,
+        params: FunctionParams<'src, 'b>,
+        body: FunctionBody<'src, 'b>,
     },
     FunctionPrototype {
         name: &'src str,
-        type_params: Type<'src>,
-        type_of: Type<'src>,
+        type_params: Type<'src, 'b>,
+        type_of: Type<'src, 'b>,
     },
 }
 
-pub type Ast<'a> = WithPos<AstRepr<'a>>;
+pub type Ast<'a, 'b> = WithPos<AstRepr<'a, 'b>>;
 
-pub struct Parser<'src, I>
+pub struct Parser<'src, 'bump, I>
 where
     I: Iterator<Item = Token<'src>>,
 {
     iter: PeekIter<Token<'src>, I>,
+    bump: &'bump Bump,
 }
 
 pub type ParserResult<T> = Result<T, ParserError>;
 
-impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
-    pub const fn new(iter: PeekIter<Token<'src>, I>) -> Self {
-        Self { iter }
+impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I> {
+    pub const fn new(iter: PeekIter<Token<'src>, I>, bump: &'bump Bump) -> Self {
+        Self { iter, bump }
     }
 
     /// Get the current token in the iterator, if the current token is [`None`],
@@ -215,7 +222,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         }
     }
 
-    pub fn parse_const(&mut self) -> ParserResult<Ast<'src>> {
+    pub fn parse_const(&mut self) -> ParserResult<Ast<'src, 'bump>> {
         let c = self.expect(TokenRepr::Const)?;
         let name = self.expect(TokenRepr::Identifier)?;
         self.expect(TokenRepr::Set)?;
@@ -230,23 +237,23 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         ))
     }
 
-    pub fn parse_expr(&mut self, end: TokenRepr) -> ParserResult<Expr<'src>> {
+    pub fn parse_expr(&mut self, end: TokenRepr) -> ParserResult<Expr<'src, 'bump>> {
         let curr = self.parse_value(true)?;
         self.cont_expr_or_end(curr, &[end]).map(|(_, e)| e)
     }
 
     pub fn parse_identifier_or_call(
         &mut self,
-        start: Expr<'src>,
+        start: Expr<'src, 'bump>,
         allow_call: bool,
-        type_params: Option<Type<'src>>,
-    ) -> ParserResult<Expr<'src>> {
+        type_params: Option<Type<'src, 'bump>>,
+    ) -> ParserResult<Expr<'src, 'bump>> {
         let next = self.current()?;
 
         if next.repr == TokenRepr::Dot {
             let property = self.peek()?;
             let access = Expr::Access {
-                object: Box::new(start),
+                object: Box::new_in(start, self.bump),
                 property: property.data,
             };
 
@@ -259,8 +266,8 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
 
             //let params = self.parse_expr(TokenRepr::RParen)?;
             let function_call = Expr::Call {
-                object: Box::new(start),
-                params: Box::new(self.parse_tuple()?),
+                object: Box::new_in(start, self.bump),
+                params: Box::new_in(self.parse_tuple()?, self.bump),
                 type_params,
             };
 
@@ -274,7 +281,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
     }
 
     /// Parse one value in the token tree
-    pub fn parse_value(&mut self, allow_unary: bool) -> ParserResult<Expr<'src>> {
+    pub fn parse_value(&mut self, allow_unary: bool) -> ParserResult<Expr<'src, 'bump>> {
         const EXPECTED: &[TokenRepr] = &[
             TokenRepr::Number,
             TokenRepr::String,
@@ -300,15 +307,15 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
                 self.parse_identifier_or_call(value, true, None)
             }
             TokenRepr::LParen => self.parse_tuple(),
-            TokenRepr::Minus if allow_unary => Ok(unary_expr(self.parse_value(false)?)),
+            TokenRepr::Minus if allow_unary => Ok(unary_expr(self.bump, self.parse_value(false)?)),
             TokenRepr::Minus if !allow_unary => Err(throw_double_unary(current)),
             _ if allow_unary => Err(throw_unexpected_mult(current, EXPECTED)),
             _ => Err(throw_unexpected_mult(current, EXPECTED_NO_UNARY)),
         }
     }
 
-    pub fn parse_tuple(&mut self) -> ParserResult<Expr<'src>> {
-        let mut result = vec![];
+    pub fn parse_tuple(&mut self) -> ParserResult<Expr<'src, 'bump>> {
+        let mut result = Vec::new_in(self.bump);
 
         loop {
             if self.current().map(|a| a.repr) == Ok(TokenRepr::RParen) && result.len() == 0 {
@@ -332,9 +339,13 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         }
     }
 
-    pub fn parse_tuple_with<T, F>(&mut self, func: F, endings: &[TokenRepr]) -> ParserResult<Vec<T>>
+    pub fn parse_tuple_with<T, F>(
+        &mut self,
+        func: F,
+        endings: &[TokenRepr],
+    ) -> ParserResult<Vec<'bump, T>>
     where
-        F: Fn(Expr<'src>, SourcePosition) -> ParserResult<T>,
+        F: Fn(Expr<'src, 'bump>, SourcePosition) -> ParserResult<T>,
     {
         if self
             .current()
@@ -344,7 +355,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
             self.advance()?;
         }
 
-        let mut result = vec![];
+        let mut result = Vec::new_in(self.bump);
         let mut cont_expr_ends: ArrayVec<TokenRepr, 16> =
             ArrayVec::from_iter(endings.into_iter().map(|a| *a));
         cont_expr_ends.push(TokenRepr::Coma);
@@ -372,21 +383,21 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
 
     pub fn cont_expr_or_end(
         &mut self,
-        start: Expr<'src>,
+        start: Expr<'src, 'bump>,
         end: &[TokenRepr],
-    ) -> ParserResult<(TokenRepr, Expr<'src>)> {
+    ) -> ParserResult<(TokenRepr, Expr<'src, 'bump>)> {
         let current = self.advance()?;
 
         match current.repr {
             TokenRepr::Mult | TokenRepr::Div => {
                 let value = self.parse_value(true)?;
-                self.cont_expr_or_end(binop_expr(start, current.repr, value), end)
+                self.cont_expr_or_end(binop_expr(self.bump, start, current.repr, value), end)
             }
 
             TokenRepr::Plus | TokenRepr::Minus => {
                 let next = self.parse_value(true)?;
                 let (end, next) = self.cont_expr_or_end(next, end)?;
-                Ok((end, binop_expr(start, current.repr, next)))
+                Ok((end, binop_expr(self.bump, start, current.repr, next)))
             }
 
             e if end.contains(&e) => Ok((e, start)),
@@ -407,8 +418,8 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         }
     }
 
-    pub fn parse_function_body(&mut self) -> ParserResult<FunctionBody<'src>> {
-        let mut result = vec![];
+    pub fn parse_function_body(&mut self) -> ParserResult<FunctionBody<'src, 'bump>> {
+        let mut result = Vec::new_in(self.bump);
         loop {
             let val = self.parse_value(true)?;
             let (end, expr) =
@@ -425,12 +436,13 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         Ok(result)
     }
 
-    pub fn parse_function_params(&mut self) -> ParserResult<FunctionParams<'src>> {
+    pub fn parse_function_params(&mut self) -> ParserResult<FunctionParams<'src, 'bump>> {
         macro_rules! insert {
             ($vec:ident, $data:expr) => {
                 match &mut $vec {
                     None => {
-                        let new = vec![$data];
+                        let mut new = Vec::new_in(self.bump);
+                        new.push($data);
                         $vec = Some(new);
                     }
                     Some(v) => v.push($data),
@@ -461,7 +473,10 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         }
     }
 
-    fn try_parse_type_tuple(&mut self, end: &[TokenRepr]) -> ParserResult<Vec<Type<'src>>> {
+    fn try_parse_type_tuple(
+        &mut self,
+        end: &[TokenRepr],
+    ) -> ParserResult<Vec<'bump, Type<'src, 'bump>>> {
         self.parse_tuple_with(
             |expr, pos| {
                 if let Expr::Identifier(name) = expr {
@@ -477,7 +492,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         )
     }
 
-    pub fn try_parse_type_params(&mut self) -> ParserResult<Type<'src>> {
+    pub fn try_parse_type_params(&mut self) -> ParserResult<Type<'src, 'bump>> {
         let curr = self.current()?;
         if curr.repr != TokenRepr::LAngle {
             return Ok(Type::Unit);
@@ -489,7 +504,7 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         Ok(Type::Tuple(result))
     }
 
-    fn try_parse_function_return(&mut self) -> ParserResult<Type<'src>> {
+    fn try_parse_function_return(&mut self) -> ParserResult<Type<'src, 'bump>> {
         if self.current()?.repr == TokenRepr::LParen {
             Ok(Type::Tuple(self.try_parse_type_tuple(&[
                 TokenRepr::RParen,
@@ -501,23 +516,26 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
         }
     }
 
-    pub fn try_parse_function_type(&mut self) -> ParserResult<Type<'src>> {
+    pub fn try_parse_function_type(&mut self) -> ParserResult<Type<'src, 'bump>> {
         self.advance()?;
         let params = self.try_parse_type_tuple(&[TokenRepr::RParen])?;
-        let params = Box::new(if params.len() == 0 {
-            Type::Unit
-        } else {
-            Type::Tuple(params)
-        });
+        let params = Box::new_in(
+            if params.len() == 0 {
+                Type::Unit
+            } else {
+                Type::Tuple(params)
+            },
+            self.bump,
+        );
 
         self.expect(TokenRepr::Arrow)?;
-        let returns = Box::new(self.try_parse_function_return()?);
+        let returns = Box::new_in(self.try_parse_function_return()?, self.bump);
         self.expect(TokenRepr::Semicolon)?;
 
         Ok(Type::Function { params, returns })
     }
 
-    pub fn parse_function(&mut self) -> ParserResult<Ast<'src>> {
+    pub fn parse_function(&mut self) -> ParserResult<Ast<'src, 'bump>> {
         let start = self.expect(TokenRepr::Fn)?;
         let name = self.expect(TokenRepr::Identifier)?.data;
         let type_params = self.try_parse_type_params()?;
@@ -552,8 +570,8 @@ impl<'src, I: Iterator<Item = Token<'src>>> Parser<'src, I> {
     }
 }
 
-impl<'src, I: Iterator<Item = Token<'src>>> Iterator for Parser<'src, I> {
-    type Item = ParserResult<Ast<'src>>;
+impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Iterator for Parser<'src, 'bump, I> {
+    type Item = ParserResult<Ast<'src, 'bump>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let res = loop {
@@ -573,37 +591,39 @@ impl<'src, I: Iterator<Item = Token<'src>>> Iterator for Parser<'src, I> {
     }
 }
 
-pub trait IntoParser<'s>: Iterator<Item = Token<'s>> + Sized {
-    fn into_parser(self) -> Parser<'s, Self>;
+pub trait IntoParser<'s, 'b>: Iterator<Item = Token<'s>> + Sized {
+    fn into_parser(self, bump: &'b Bump) -> Parser<'s, 'b, Self>;
 }
 
-impl<'s, I: Iterator<Item = Token<'s>>> IntoParser<'s> for I {
-    fn into_parser(self) -> Parser<'s, Self> {
-        Parser::new(PeekIter::new(self))
+impl<'s: 'b, 'b, I: Iterator<Item = Token<'s>>> IntoParser<'s, 'b> for I {
+    fn into_parser(self, bump: &'b Bump) -> Parser<'s, 'b, Self> {
+        Parser::new(PeekIter::new(self), bump)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::{AstRepr, Expr, IntoParser, Type};
+    use bumpalo::{Bump, boxed::Box, vec};
 
     macro_rules! parse_file {
-        ($file:literal) => {
+        ($file:literal, $bump:ident) => {
             $crate::Lexer::new(include_str!($file))
                 .map(|tok| tok.expect("invalid token"))
-                .into_parser()
+                .into_parser(&$bump)
                 .map(|a| a.expect("invalid ast").inner)
-                .collect::<Vec<_>>()
         };
     }
 
     #[test]
     fn fib_test() {
-        let ast = parse_file!("../test/fib.cofy");
-        let (prototype, impl_0, impl_1, generic) = match &ast[..] {
-            [a, b, c, d] => (a, b, c, d),
-            _ => panic!(),
-        };
+        let bump = Bump::new();
+        let mut ast = parse_file!("../test/fib.cofy", bump);
+
+        let prototype = ast.next().expect("shouldnt fail");
+        let impl_0 = ast.next().expect("shouldnt fail");
+        let impl_1 = ast.next().expect("shouldnt fail");
+        let generic = ast.next().expect("shouldnt fail");
 
         assert!(matches!(prototype, AstRepr::FunctionPrototype { .. }));
         assert!(matches!(impl_0, AstRepr::Function { name: "fib", .. }));
@@ -613,20 +633,19 @@ mod tests {
 
     #[test]
     fn templates_test() {
-        let ast = parse_file!("../test/template.cofy");
-        let (proto, generic) = match &ast[..] {
-            [a, b] => (a.clone(), b.clone()),
-            _ => panic!("{:#?}", ast),
-        };
+        let bump = Bump::new();
+        let mut ast = parse_file!("../test/template.cofy", bump);
+        let proto = ast.next().expect("shouldnt fail");
+        let generic = ast.next().expect("shouldnt fail");
 
         assert_eq!(
             proto,
             AstRepr::FunctionPrototype {
                 name: "variant",
-                type_params: Type::Tuple(vec![Type::Plain("T")]),
+                type_params: Type::Tuple(vec![in &bump; Type::Plain("T")]),
                 type_of: Type::Function {
-                    params: Box::new(Type::Tuple(vec![Type::Plain("T")])),
-                    returns: Box::new(Type::Plain("T"))
+                    params: Box::new_in(Type::Tuple(vec![in &bump; Type::Plain("T")]), &bump),
+                    returns: Box::new_in(Type::Plain("T"), &bump)
                 }
             }
         );
@@ -635,9 +654,9 @@ mod tests {
             generic,
             AstRepr::Function {
                 name: "variant",
-                type_params: Type::Tuple(vec![Type::Plain("T")]),
-                params: Some(vec![Expr::Identifier("t")]),
-                body: vec![Expr::Identifier("t")]
+                type_params: Type::Tuple(vec![in &bump; Type::Plain("T")]),
+                params: Some(vec![in &bump; Expr::Identifier("t")]),
+                body: vec![in &bump; Expr::Identifier("t")]
             }
         );
     }
