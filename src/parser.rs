@@ -263,7 +263,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
 
             Ok(function_call)
         } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
-            let type_params = self.try_parse_type_params()?;
+            let type_params = self.parse_type_params()?;
             self.parse_identifier_or_call(start, allow_call, Some(type_params))
         } else {
             Ok(start)
@@ -476,7 +476,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         )
     }
 
-    pub fn try_parse_type_params(&mut self) -> ParserResult<'bump, Type<'src, 'bump>> {
+    pub fn parse_type_params(&mut self) -> ParserResult<'bump, Type<'src, 'bump>> {
         let curr = self.current()?;
         if curr.repr != TokenRepr::LAngle {
             return Ok(Type::Unit);
@@ -488,7 +488,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         Ok(Type::Tuple(result))
     }
 
-    fn try_parse_function_return(&mut self) -> ParserResult<'bump, Type<'src, 'bump>> {
+    fn parse_function_return(&mut self) -> ParserResult<'bump, Type<'src, 'bump>> {
         if self.current()?.repr == TokenRepr::LParen {
             Ok(Type::Tuple(self.try_parse_type_tuple(&[
                 TokenRepr::RParen,
@@ -500,7 +500,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         }
     }
 
-    pub fn try_parse_function_type(&mut self) -> ParserResult<'bump, Type<'src, 'bump>> {
+    pub fn parse_function_type(&mut self) -> ParserResult<'bump, Type<'src, 'bump>> {
         self.advance()?;
         let params = self.try_parse_type_tuple(&[TokenRepr::RParen])?;
         let params = Box::new_in(
@@ -513,7 +513,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         );
 
         self.expect(TokenRepr::Arrow)?;
-        let returns = Box::new_in(self.try_parse_function_return()?, self.bump);
+        let returns = Box::new_in(self.parse_function_return()?, self.bump);
         self.expect(TokenRepr::Semicolon)?;
 
         Ok(Type::Function { params, returns })
@@ -522,11 +522,11 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
     pub fn parse_function(&mut self) -> ParserResult<'bump, Ast<'src, 'bump>> {
         let start = self.expect(TokenRepr::Fn)?;
         let name = self.expect(TokenRepr::Identifier)?.data;
-        let type_params = self.try_parse_type_params()?;
+        let type_params = self.parse_type_params()?;
 
         let curr = self.current()?;
         if curr.repr == TokenRepr::LParen {
-            let type_of = self.try_parse_function_type()?;
+            let type_of = self.parse_function_type()?;
             Ok(Ast::new(
                 AstRepr::FunctionPrototype {
                     name,
