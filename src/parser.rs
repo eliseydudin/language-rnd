@@ -1,10 +1,9 @@
 use crate::{PeekIter, SourcePosition, Token, TokenRepr, WithPos, WithPosOrEof};
-use arrayvec::ArrayVec;
-use bumpalo::{Bump, boxed::Box, collections::Vec};
+use bumpalo::{Bump, boxed::Box, collections::Vec, vec};
 use core::{error, fmt};
 
 #[derive(Debug, PartialEq)]
-pub enum ErrorRepr {
+pub enum ErrorRepr<'b> {
     Eof,
     Unexpected {
         found: TokenRepr,
@@ -12,7 +11,7 @@ pub enum ErrorRepr {
     },
     UnexpectedMult {
         found: TokenRepr,
-        expected: ArrayVec<TokenRepr, 16>,
+        expected: Vec<'b, TokenRepr>,
     },
     DoubleUnary,
     UnexpectedParameterType,
@@ -33,7 +32,7 @@ pub enum Type<'src, 'b> {
     Plain(&'src str),
 }
 
-impl fmt::Display for ErrorRepr {
+impl fmt::Display for ErrorRepr<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Eof => write!(f, "expected a token, found eof"),
@@ -61,27 +60,18 @@ impl fmt::Display for ErrorRepr {
     }
 }
 
-impl error::Error for ErrorRepr {}
+impl error::Error for ErrorRepr<'_> {}
 
-pub type ParserError = WithPosOrEof<ErrorRepr>;
+pub type ParserError<'b> = WithPosOrEof<ErrorRepr<'b>>;
 
-pub const fn throw_eof_error() -> ParserError {
+pub const fn throw_eof_error<'b>() -> ParserError<'b> {
     WithPosOrEof::Eof(ErrorRepr::Eof)
 }
 
-pub fn throw_unexpected_mult(found: Token, expected_toks: impl AsRef<[TokenRepr]>) -> ParserError {
-    let mut expected = ArrayVec::new();
-    for tok in expected_toks.as_ref() {
-        expected.push(*tok)
-    }
-
-    throw_unexpected_mult_array(found, expected)
-}
-
-pub const fn throw_unexpected_mult_array(
+pub const fn throw_unexpected_mult<'b>(
     found: Token,
-    expected: ArrayVec<TokenRepr, 16>,
-) -> ParserError {
+    expected: Vec<'b, TokenRepr>,
+) -> ParserError<'b> {
     WithPosOrEof::Pos(WithPos::new(
         ErrorRepr::UnexpectedMult {
             found: found.repr,
@@ -174,7 +164,7 @@ where
     bump: &'bump Bump,
 }
 
-pub type ParserResult<T> = Result<T, ParserError>;
+pub type ParserResult<'b, T> = Result<T, ParserError<'b>>;
 
 impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I> {
     pub const fn new(iter: PeekIter<Token<'src>, I>, bump: &'bump Bump) -> Self {
@@ -183,13 +173,13 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
 
     /// Get the current token in the iterator, if the current token is [`None`],
     /// return an EOF error.
-    pub fn current(&self) -> ParserResult<Token<'src>> {
+    pub fn current(&self) -> ParserResult<'bump, Token<'src>> {
         self.iter.current_copied().ok_or_else(throw_eof_error)
     }
 
     /// Get the current token in the iterator and advance it, if the current token is [`None`],
     /// return an EOF error.
-    pub fn advance(&mut self) -> ParserResult<Token<'src>> {
+    pub fn advance(&mut self) -> ParserResult<'bump, Token<'src>> {
         while let Some(tok) = self.iter.advance() {
             match tok.repr {
                 TokenRepr::Comment => continue,
@@ -202,11 +192,11 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
 
     /// Get the next token in the iterator, if the token is [`None`],
     /// return an EOF error.
-    pub fn peek(&self) -> ParserResult<Token<'src>> {
+    pub fn peek(&self) -> ParserResult<'bump, Token<'src>> {
         self.iter.peek_copied().ok_or_else(throw_eof_error)
     }
 
-    pub fn expect(&mut self, expect: TokenRepr) -> ParserResult<Token<'src>> {
+    pub fn expect(&mut self, expect: TokenRepr) -> ParserResult<'bump, Token<'src>> {
         let curr = self.advance()?;
 
         if curr.repr == expect {
@@ -222,7 +212,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         }
     }
 
-    pub fn parse_const(&mut self) -> ParserResult<Ast<'src, 'bump>> {
+    pub fn parse_const(&mut self) -> ParserResult<'bump, Ast<'src, 'bump>> {
         let c = self.expect(TokenRepr::Const)?;
         let name = self.expect(TokenRepr::Identifier)?;
         self.expect(TokenRepr::Set)?;
@@ -237,7 +227,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         ))
     }
 
-    pub fn parse_expr(&mut self, end: TokenRepr) -> ParserResult<Expr<'src, 'bump>> {
+    pub fn parse_expr(&mut self, end: TokenRepr) -> ParserResult<'bump, Expr<'src, 'bump>> {
         let curr = self.parse_value(true)?;
         self.cont_expr_or_end(curr, &[end]).map(|(_, e)| e)
     }
@@ -247,7 +237,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         start: Expr<'src, 'bump>,
         allow_call: bool,
         type_params: Option<Type<'src, 'bump>>,
-    ) -> ParserResult<Expr<'src, 'bump>> {
+    ) -> ParserResult<'bump, Expr<'src, 'bump>> {
         let next = self.current()?;
 
         if next.repr == TokenRepr::Dot {
@@ -281,40 +271,43 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
     }
 
     /// Parse one value in the token tree
-    pub fn parse_value(&mut self, allow_unary: bool) -> ParserResult<Expr<'src, 'bump>> {
-        const EXPECTED: &[TokenRepr] = &[
-            TokenRepr::Number,
-            TokenRepr::String,
-            TokenRepr::Identifier,
-            TokenRepr::LParen,
-            TokenRepr::Minus,
-        ];
-
-        const EXPECTED_NO_UNARY: &[TokenRepr] = &[
-            TokenRepr::Number,
-            TokenRepr::String,
-            TokenRepr::Identifier,
-            TokenRepr::LParen,
-        ];
-
+    pub fn parse_value(&mut self, allow_unary: bool) -> ParserResult<'bump, Expr<'src, 'bump>> {
         let current = self.advance()?;
 
         match current.repr {
             TokenRepr::Number => Ok(Expr::Number(current.data)),
             TokenRepr::String => Ok(Expr::String(current.data)),
             TokenRepr::Identifier => {
-                let value = Expr::Identifier(current.data);
-                self.parse_identifier_or_call(value, true, None)
+                self.parse_identifier_or_call(Expr::Identifier(current.data), true, None)
             }
             TokenRepr::LParen => self.parse_tuple(),
             TokenRepr::Minus if allow_unary => Ok(unary_expr(self.bump, self.parse_value(false)?)),
             TokenRepr::Minus if !allow_unary => Err(throw_double_unary(current)),
-            _ if allow_unary => Err(throw_unexpected_mult(current, EXPECTED)),
-            _ => Err(throw_unexpected_mult(current, EXPECTED_NO_UNARY)),
+            _ if allow_unary => Err(throw_unexpected_mult(
+                current,
+                vec![
+                    in &self.bump;
+                    TokenRepr::Number,
+                    TokenRepr::String,
+                    TokenRepr::Identifier,
+                    TokenRepr::LParen,
+                    TokenRepr::Minus
+                ],
+            )),
+            _ => Err(throw_unexpected_mult(
+                current,
+                vec![
+                    in &self.bump;
+                    TokenRepr::Number,
+                    TokenRepr::String,
+                    TokenRepr::Identifier,
+                    TokenRepr::LParen
+                ],
+            )),
         }
     }
 
-    pub fn parse_tuple(&mut self) -> ParserResult<Expr<'src, 'bump>> {
+    pub fn parse_tuple(&mut self) -> ParserResult<'bump, Expr<'src, 'bump>> {
         let mut result = Vec::new_in(self.bump);
 
         loop {
@@ -343,9 +336,9 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         &mut self,
         func: F,
         endings: &[TokenRepr],
-    ) -> ParserResult<Vec<'bump, T>>
+    ) -> ParserResult<'bump, Vec<'bump, T>>
     where
-        F: Fn(Expr<'src, 'bump>, SourcePosition) -> ParserResult<T>,
+        F: Fn(Expr<'src, 'bump>, SourcePosition) -> ParserResult<'bump, T>,
     {
         if self
             .current()
@@ -356,8 +349,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         }
 
         let mut result = Vec::new_in(self.bump);
-        let mut cont_expr_ends: ArrayVec<TokenRepr, 16> =
-            ArrayVec::from_iter(endings.into_iter().map(|a| *a));
+        let mut cont_expr_ends = Vec::from_iter_in(endings.into_iter().copied(), self.bump);
         cont_expr_ends.push(TokenRepr::Coma);
 
         loop {
@@ -385,7 +377,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         &mut self,
         start: Expr<'src, 'bump>,
         end: &[TokenRepr],
-    ) -> ParserResult<(TokenRepr, Expr<'src, 'bump>)> {
+    ) -> ParserResult<'bump, (TokenRepr, Expr<'src, 'bump>)> {
         let current = self.advance()?;
 
         match current.repr {
@@ -403,22 +395,13 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
             e if end.contains(&e) => Ok((e, start)),
 
             _ => {
-                let mut res = ArrayVec::new();
-                res.push(TokenRepr::Mult);
-                res.push(TokenRepr::Div);
-                res.push(TokenRepr::Plus);
-                res.push(TokenRepr::Minus);
-
-                for r in end {
-                    res.push(*r);
-                }
-
-                Err(throw_unexpected_mult_array(current, res))
+                let res = vec![in &self.bump; TokenRepr::Mult, TokenRepr::Div, TokenRepr::Plus, TokenRepr::Minus];
+                Err(throw_unexpected_mult(current, res))
             }
         }
     }
 
-    pub fn parse_function_body(&mut self) -> ParserResult<FunctionBody<'src, 'bump>> {
+    pub fn parse_function_body(&mut self) -> ParserResult<'bump, FunctionBody<'src, 'bump>> {
         let mut result = Vec::new_in(self.bump);
         loop {
             let val = self.parse_value(true)?;
@@ -436,7 +419,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         Ok(result)
     }
 
-    pub fn parse_function_params(&mut self) -> ParserResult<FunctionParams<'src, 'bump>> {
+    pub fn parse_function_params(&mut self) -> ParserResult<'bump, FunctionParams<'src, 'bump>> {
         macro_rules! insert {
             ($vec:ident, $data:expr) => {
                 match &mut $vec {
@@ -461,7 +444,8 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
                 _ => {
                     return Err(throw_unexpected_mult(
                         next,
-                        &[
+                        vec![
+                            in &self.bump;
                             TokenRepr::Set,
                             TokenRepr::Identifier,
                             TokenRepr::Number,
@@ -476,7 +460,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
     fn try_parse_type_tuple(
         &mut self,
         end: &[TokenRepr],
-    ) -> ParserResult<Vec<'bump, Type<'src, 'bump>>> {
+    ) -> ParserResult<'bump, Vec<'bump, Type<'src, 'bump>>> {
         self.parse_tuple_with(
             |expr, pos| {
                 if let Expr::Identifier(name) = expr {
@@ -492,7 +476,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         )
     }
 
-    pub fn try_parse_type_params(&mut self) -> ParserResult<Type<'src, 'bump>> {
+    pub fn try_parse_type_params(&mut self) -> ParserResult<'bump, Type<'src, 'bump>> {
         let curr = self.current()?;
         if curr.repr != TokenRepr::LAngle {
             return Ok(Type::Unit);
@@ -504,7 +488,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         Ok(Type::Tuple(result))
     }
 
-    fn try_parse_function_return(&mut self) -> ParserResult<Type<'src, 'bump>> {
+    fn try_parse_function_return(&mut self) -> ParserResult<'bump, Type<'src, 'bump>> {
         if self.current()?.repr == TokenRepr::LParen {
             Ok(Type::Tuple(self.try_parse_type_tuple(&[
                 TokenRepr::RParen,
@@ -516,7 +500,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         }
     }
 
-    pub fn try_parse_function_type(&mut self) -> ParserResult<Type<'src, 'bump>> {
+    pub fn try_parse_function_type(&mut self) -> ParserResult<'bump, Type<'src, 'bump>> {
         self.advance()?;
         let params = self.try_parse_type_tuple(&[TokenRepr::RParen])?;
         let params = Box::new_in(
@@ -535,7 +519,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         Ok(Type::Function { params, returns })
     }
 
-    pub fn parse_function(&mut self) -> ParserResult<Ast<'src, 'bump>> {
+    pub fn parse_function(&mut self) -> ParserResult<'bump, Ast<'src, 'bump>> {
         let start = self.expect(TokenRepr::Fn)?;
         let name = self.expect(TokenRepr::Identifier)?.data;
         let type_params = self.try_parse_type_params()?;
@@ -571,7 +555,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
 }
 
 impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Iterator for Parser<'src, 'bump, I> {
-    type Item = ParserResult<Ast<'src, 'bump>>;
+    type Item = ParserResult<'bump, Ast<'src, 'bump>>;
 
     fn next(&mut self) -> Option<Self::Item> {
         let res = loop {
