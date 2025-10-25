@@ -381,15 +381,14 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Parser<'src, 'bump, I>
         let current = self.advance()?;
 
         match current.repr {
-            TokenRepr::Mult | TokenRepr::Div => {
+            // TokenRepr::Mult | TokenRepr::Div => {
+            //     let next = self.parse_value(true)?;
+            //     let (end, next) = self.cont_expr_or_end(next, end)?;
+            //     Ok((end, binop_expr(self.bump, start, current.repr, next)))
+            // }
+            TokenRepr::Plus | TokenRepr::Minus | TokenRepr::Mult | TokenRepr::Div => {
                 let value = self.parse_value(true)?;
                 self.cont_expr_or_end(binop_expr(self.bump, start, current.repr, value), end)
-            }
-
-            TokenRepr::Plus | TokenRepr::Minus => {
-                let next = self.parse_value(true)?;
-                let (end, next) = self.cont_expr_or_end(next, end)?;
-                Ok((end, binop_expr(self.bump, start, current.repr, next)))
             }
 
             e if end.contains(&e) => Ok((e, start)),
