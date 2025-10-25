@@ -564,7 +564,7 @@ impl<'src: 'bump, 'bump, I: Iterator<Item = Token<'src>>> Iterator for Parser<'s
                 TokenRepr::Const => break self.parse_const(),
                 TokenRepr::Fn => break self.parse_function(),
                 TokenRepr::Comment => {
-                    let _ = self.advance();
+                    self.advance().ok()?;
                     continue;
                 }
                 _ => todo!("{current:?}"),

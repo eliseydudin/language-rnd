@@ -1,7 +1,11 @@
 [package]
-name = "language-stuff"
+name = "cofy"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
 bumpalo = { version = "3.19.0", features = ["collections", "boxed"] }
+
+[[bin]]
+path = "bin/parse.rs"
+name = "parse"
