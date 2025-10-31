@@ -7,5 +7,5 @@ edition = "2024"
 bumpalo = { version = "3.19.0", features = ["collections", "boxed"] }
 
 [[bin]]
-path = "bin/parse.rs"
-name = "parse"
+path = "bin/expression.rs"
+name = "expr"
