@@ -80,6 +80,13 @@ impl<'src, 'bump> Expr<'src, 'bump> {
             },
         }
     }
+
+    pub fn number(pos: SourcePosition, data: &'src str) -> Self {
+        Self {
+            pos,
+            inner: ExprInner::Number(data),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -102,6 +109,15 @@ impl fmt::Display for ParserError<'_> {
 impl error::Error for ParserError<'_> {}
 
 type ParserResult<'s, T> = Result<T, ParserError<'s>>;
+
+macro_rules! error {
+    ($where:expr, $data:expr) => {
+        $crate::parser::ParserError {
+            message: $data.into(),
+            position: $where.pos,
+        }
+    };
+}
 
 impl<'src, 'bump> Parser<'src, 'bump> {
     pub fn new(bump: &'bump Bump, token_stream: &'bump [Token<'src>]) -> Self {
@@ -233,16 +249,14 @@ impl<'src, 'bump> Parser<'src, 'bump> {
     }
 
     pub fn primary(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
-        if self.match_next(&[TokenRepr::Number]) {
-            let tok = self
-                .previous()
-                .expect("after match next we are guaranteed not to go out of bounds");
-            Ok(Expr {
-                pos: tok.pos,
-                inner: ExprInner::Number(tok.data),
-            })
-        } else {
-            todo!()
+        let tok = self.peek().ok_or(error!(
+            self.previous().unwrap(),
+            "expected a token, found eof"
+        ))?;
+
+        match tok.repr {
+            TokenRepr::Number => Ok(Expr::number(tok.pos, tok.data)),
+            _ => todo!(),
         }
     }
 }
