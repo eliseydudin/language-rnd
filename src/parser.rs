@@ -1,5 +1,5 @@
 use crate::{SourcePosition, Token, TokenRepr};
-use bumpalo::{Bump, boxed::Box};
+use bumpalo::{Bump, boxed::Box, collections::String, format};
 use core::{error, fmt};
 
 pub struct Parser<'src, 'bump> {
@@ -91,18 +91,13 @@ impl<'src, 'bump> Expr<'src, 'bump> {
 
 #[derive(Debug, Clone)]
 pub struct ParserError<'src> {
-    message: Option<&'src str>,
+    message: String<'src>,
     position: SourcePosition,
 }
 
 impl fmt::Display for ParserError<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "at {}: {}",
-            self.position,
-            self.message.unwrap_or("<none>")
-        )
+        write!(f, "at {}: {}", self.position, self.message)
     }
 }
 
@@ -119,7 +114,7 @@ macro_rules! error {
     };
 }
 
-impl<'src, 'bump> Parser<'src, 'bump> {
+impl<'src, 'bump: 'src> Parser<'src, 'bump> {
     pub fn new(bump: &'bump Bump, token_stream: &'bump [Token<'src>]) -> Self {
         Self {
             bump,
@@ -248,14 +243,36 @@ impl<'src, 'bump> Parser<'src, 'bump> {
         self.primary()
     }
 
+    pub fn consume(&mut self, tok: TokenRepr) -> ParserResult<'src, Token<'src>> {
+        if self.check(tok) {
+            Ok(self
+                .advance()
+                .expect("shouldn't be None since self.check is true"))
+        } else {
+            Err(error!(
+                self.previous().unwrap(),
+                format!(in self.bump, "expected a {:?}", tok)
+            ))
+        }
+    }
+
     pub fn primary(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
-        let tok = self.peek().ok_or(error!(
-            self.previous().unwrap(),
-            "expected a token, found eof"
-        ))?;
+        let tok = self.peek().ok_or_else(|| {
+            error!(
+                self.previous().unwrap(),
+                String::from_str_in("expected a token, found eof", self.bump)
+            )
+        })?;
+
+        let _ = self.advance();
 
         match tok.repr {
             TokenRepr::Number => Ok(Expr::number(tok.pos, tok.data)),
+            TokenRepr::LParen => {
+                let exp = self.expression()?;
+                self.consume(TokenRepr::RParen)?;
+                Ok(exp)
+            }
             _ => todo!(),
         }
     }
