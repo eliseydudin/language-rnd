@@ -1,7 +1,29 @@
 use bumpalo::Bump;
-use cofy::{Lexer, LexerError, Parser};
+use cofy::{Expr, ExprInner, Lexer, LexerError, Operator, Parser};
 use core::error::Error;
 use std::io::{Error as IoErr, ErrorKind, stdin};
+
+fn calculate_expression(expr: &Expr) -> f64 {
+    match expr.inner() {
+        ExprInner::BinOp {
+            left,
+            operator,
+            right,
+        } => {
+            let left = calculate_expression(&*left);
+            let right = calculate_expression(&*right);
+
+            match operator {
+                Operator::Plus => left + right,
+                Operator::Minus => left - right,
+                Operator::Div => left / right,
+                Operator::Mult => left * right,
+            }
+        }
+        ExprInner::Number(num) => num.parse().unwrap(),
+        ExprInner::Unary { data, .. } => -calculate_expression(&*data),
+    }
+}
 
 fn main() -> Result<(), Box<dyn Error>> {
     let bump = Bump::new();
@@ -14,9 +36,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut parser = Parser::new(&bump, &tokens);
 
     match parser.expression() {
-        Ok(expr) => println!("found the following expression: {expr:#?}"),
+        Ok(expr) => {
+            println!("found the following expression: {expr:#?}");
+            let res = calculate_expression(&expr);
+            println!("the result of the expression: {res}");
+        }
         Err(e) => println!("found the following error: {e}"),
     }
+
+    println!("bytes allocated: {}", bump.allocated_bytes());
 
     Ok(())
 }

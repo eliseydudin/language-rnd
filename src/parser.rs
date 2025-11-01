@@ -1,5 +1,5 @@
-use crate::{SourcePosition, Token, TokenRepr};
-use bumpalo::{Bump, boxed::Box, collections::String, format};
+use crate::{CowStr, SourcePosition, Token, TokenRepr, cow_str};
+use bumpalo::{Bump, boxed::Box, format};
 use core::{error, fmt};
 
 pub struct Parser<'src, 'bump> {
@@ -42,6 +42,7 @@ pub enum ExprInner<'src, 'bump> {
     },
 }
 
+#[expect(unused)]
 #[derive(Debug)]
 pub struct Expr<'src, 'bump> {
     inner: ExprInner<'src, 'bump>,
@@ -87,11 +88,19 @@ impl<'src, 'bump> Expr<'src, 'bump> {
             inner: ExprInner::Number(data),
         }
     }
+
+    pub fn into_inner(self) -> ExprInner<'src, 'bump> {
+        self.inner
+    }
+
+    pub const fn inner(&self) -> &ExprInner<'src, 'bump> {
+        &self.inner
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ParserError<'src> {
-    message: String<'src>,
+    message: CowStr<'src, 'src>,
     position: SourcePosition,
 }
 
@@ -249,9 +258,10 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 .advance()
                 .expect("shouldn't be None since self.check is true"))
         } else {
+            let last = self.previous().unwrap();
             Err(error!(
-                self.previous().unwrap(),
-                format!(in self.bump, "expected a {:?}", tok)
+                last,
+                format!(in self.bump, "expected a {:?}, found a {:?}", tok, last.repr)
             ))
         }
     }
@@ -260,7 +270,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         let tok = self.peek().ok_or_else(|| {
             error!(
                 self.previous().unwrap(),
-                String::from_str_in("expected a token, found eof", self.bump)
+                cow_str!(in self.bump; "expected a token, found eof")
             )
         })?;
 
