@@ -112,7 +112,7 @@ impl fmt::Display for ParserError<'_> {
 
 impl error::Error for ParserError<'_> {}
 
-type ParserResult<'s, T> = Result<T, ParserError<'s>>;
+pub type ParserResult<'s, T> = Result<T, ParserError<'s>>;
 
 macro_rules! error {
     ($where:expr, $data:expr) => {
@@ -266,15 +266,16 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         }
     }
 
-    pub fn primary(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
-        let tok = self.peek().ok_or_else(|| {
-            error!(
-                self.previous().unwrap(),
-                cow_str!(in self.bump; "expected a token, found eof")
-            )
-        })?;
+    pub fn eof_error(&self) -> ParserError<'src> {
+        error!(
+            self.previous().unwrap(),
+            cow_str!(in self.bump; "expected a token, found eof")
+        )
+    }
 
-        let _ = self.advance();
+    pub fn primary(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+        let tok = self.peek().ok_or_else(|| self.eof_error())?;
+        self.advance().ok_or_else(|| self.eof_error())?;
 
         match tok.repr {
             TokenRepr::Number => Ok(Expr::number(tok.pos, tok.data)),
@@ -284,6 +285,48 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 Ok(exp)
             }
             _ => todo!(),
+        }
+    }
+
+    pub fn parse_const(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+        let begin = self.consume(TokenRepr::Const)?;
+        let name = self.consume(TokenRepr::Identifier)?;
+        self.consume(TokenRepr::Set)?;
+        let value = self.expression()?;
+        self.consume(TokenRepr::Semicolon)?;
+
+        Ok(Ast {
+            inner: AstInner::Const {
+                name: name.data,
+                value,
+            },
+            pos: begin.pos,
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum AstInner<'src, 'bump> {
+    Const {
+        name: &'src str,
+        value: Expr<'src, 'bump>,
+    },
+}
+
+#[derive(Debug)]
+pub struct Ast<'src, 'bump> {
+    pub inner: AstInner<'src, 'bump>,
+    pub pos: SourcePosition,
+}
+
+impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
+    type Item = ParserResult<'src, Ast<'src, 'bump>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let prev = self.peek()?;
+        match prev.repr {
+            TokenRepr::Const => Some(self.parse_const()),
+            _ => None,
         }
     }
 }

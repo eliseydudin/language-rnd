@@ -219,3 +219,100 @@ fn write_array_to_file path array =
 
 fn test<T> (T) => T;
 fn test<T> t = dyn.try_cast<Display>(t) => unwrap => global_debug;
+
+
+// V2 
+// newer version of this language's design
+
+// every write operation returns an IO, which is like a suspended action
+// IO is only gonna get evaluated from the main function
+// or if your function returns an IO you can use the with statements
+// to evaluate them instantly
+// IO has type parameters with the default one being unit
+fn write_array (Writer, [Display]) => IO<File>;
+// file is `Writer` which means that it can be any thing that you can write to
+// in `write_array_to_file` you pass a structure of type `File` that gets 
+// automatically converted into a `file`
+fn write_array file array = with IO 
+	=> file // file is now $ 
+	=> write("[ ") // write returns IO<File> to make it easier to chain functions
+	=> for elem in array do write("{elem}")
+	=> write("]");
+
+fn write_array_to_file (Path, [Display]) => IO;
+fn write_array_to_file path array = with IO
+	=> open_reader(path)
+	=> write_array(array)
+	=> close; 
+	
+// fn close (File) => IO;
+// `close` drops the file handle, run it whenever you need to get rid of a file
+
+
+// common problems youd solve in other languages
+fn is_even (Number) => bool;
+fn is_even n = n % 2 == 0;
+
+fn is_palindrome (string) => bool;
+fn is_palindrome str = 	
+	length_of(str) // $ is now the length of str
+	=> for i in 0..($ / 2) do 
+		if get(str, i) != get(str, $ - i - 1) // get ([T], uint) => T;
+			then return false
+	=> true;
+	
+fn greet () => IO;
+fn greet = with IO
+	=> input("enter your name: ") // input (string) => IO<string>;
+	=> println(f"Hello, {$}!"); // println (string) => IO;
+	
+fn sum_from_one_to_n (int) => int;
+fn sum_from_one_to_n n = 1..(n + 1) => sum; // sum ([T: Number]) => T;
+
+fn _inner (int, int) => int;
+fn _inner a b = 
+	if b % 3 == 0 or b % 5 == 0 
+		then a + b else a;
+
+fn sum_from_one_to_n_and_check (int) => int;
+fn sum_from_one_to_n_and_check n =	
+	1..(n + 1)
+	=> reduce($, &_inner, 0); // reduce ([T], (T, T) => T, T) => T; 	
+	// the second parameter is passed as `a` to _inner
+
+fn mult_table_of (int) => IO;
+fn mult_table_of n = with IO
+	=> for i in 1..(10 + 1) do	
+		println("{n} * {i} = {n * i}")
+	=> println("this was the multiplication table of {n}");
+
+fn my_max<T: Number> ([T]) => T;
+fn my_max array = array
+	=> if length_of($) == 0 then panic("array's length should be > 0!")
+	=> reduce($, |a, b| if a > b then a else b, 0);
+
+fn has<T: Eq> ([T], T) => bool;
+fn has array elem = 
+	for e in array do 
+		if e == elem return true
+	=> false;
+
+// simple http example
+// this assumes that http://example.org/weather checks the current IP
+// and returns the weather in form of the later defined `Weather` type
+import lib.http;
+
+@derive(Convert)
+type Weather = {
+	temperature: int,
+};
+
+fn fetch_weather (http.Client) => http.HTTP<Weather>; // http.HTTP is a monad like IO
+fn fetch_weather client = with http.HTTP	
+	=> client
+	=> http.fetch_json("http://example.org/weather") // returns HTTP<any>
+	=> convert_to(&http.HTTP) // Option<HTTP>
+	=> case $ do
+		None -> unreachable(),
+		Some(res) -> res;
+	// ^ could be replaced with `unwrap`

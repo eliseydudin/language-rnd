@@ -9,3 +9,7 @@ bumpalo = { version = "3.19.0", features = ["collections", "boxed"] }
 [[bin]]
 path = "bin/expression.rs"
 name = "expr"
+
+[[bin]]
+path = "bin/parse.rs"
+name = "parse"
