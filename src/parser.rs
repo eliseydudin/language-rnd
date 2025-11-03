@@ -1,5 +1,5 @@
 use crate::{CowStr, SourcePosition, Token, TokenRepr, cow_str};
-use bumpalo::{Bump, boxed::Box, collections::Vec, format};
+use bumpalo::{Bump, boxed::Box, collections::Vec, format, vec};
 use core::{error, fmt};
 
 pub struct Parser<'src, 'bump> {
@@ -345,7 +345,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 _ => {
                     return Err(error!(
                         curr,
-                        cow_str!(in self.bump; "unexpected token {curr:?}")
+                        cow_str!(owned format!(in self.bump, "unexpected token {:?}", curr))
                     ));
                 }
             }
@@ -364,6 +364,39 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             params,
             returns: Box::new_in(returns, self.bump),
         })
+    }
+
+    fn parse_function_params(&mut self) -> ParserResult<'src, Vec<'bump, Expr<'src, 'bump>>> {
+        let mut result = vec![in self.bump];
+
+        while self.peek().ok_or_else(|| self.eof_error())?.repr != TokenRepr::Set {
+            result.push(self.primary()?)
+        }
+
+        Ok(result)
+    }
+
+    fn parse_function_body(&mut self) -> ParserResult<'src, Vec<'bump, Expr<'src, 'bump>>> {
+        let mut result = vec![in self.bump];
+
+        loop {
+            let expr = self.expression()?;
+            result.push(expr);
+
+            let next = self.advance().ok_or_else(|| self.eof_error())?;
+            match next.repr {
+                TokenRepr::Arrow => continue,
+                TokenRepr::Semicolon => break,
+                _ => {
+                    return Err(error!(
+                        next,
+                        cow_str!(owned format!(in self.bump, "unexpected token of type {:?}", next.repr))
+                    ));
+                }
+            }
+        }
+
+        Ok(result)
     }
 
     pub fn parse_function(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
@@ -388,7 +421,18 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 pos: begin.pos,
             })
         } else {
-            todo!("normal functions are not yet implemented")
+            let params = self.parse_function_params()?;
+            self.consume(TokenRepr::Set)?;
+            let body = self.parse_function_body()?;
+            Ok(Ast {
+                inner: AstInner::Function {
+                    name: name.data,
+                    params,
+                    type_parameters,
+                    body,
+                },
+                pos: begin.pos,
+            })
         }
     }
 }
@@ -402,6 +446,12 @@ pub enum AstInner<'src, 'bump> {
     FunctionPrototype {
         name: &'src str,
         type_of: Type<'src, 'bump>,
+        type_parameters: &'bump [Type<'src, 'bump>],
+    },
+    Function {
+        name: &'src str,
+        params: Vec<'bump, Expr<'src, 'bump>>,
+        body: Vec<'bump, Expr<'src, 'bump>>,
         type_parameters: &'bump [Type<'src, 'bump>],
     },
 }

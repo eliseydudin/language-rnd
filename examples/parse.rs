@@ -83,6 +83,27 @@ fn print_tree(ast: Parser) {
                         .add_empty_child(format!("type params {type_parameters:?}"))
                         .end_child();
                 }
+                AstInner::Function {
+                    name,
+                    params,
+                    body,
+                    type_parameters,
+                } => {
+                    let refmut = tree
+                        .begin_child(format!("fn `{name}`"))
+                        .begin_child("params".to_owned());
+                    for param in params.iter() {
+                        print_expr(refmut, param);
+                    }
+                    refmut.end_child().begin_child("body".to_owned());
+                    for pipe in body.iter() {
+                        print_expr(refmut, pipe);
+                    }
+                    refmut
+                        .end_child()
+                        .add_empty_child(format!("type params {type_parameters:?}"))
+                        .end_child();
+                }
             },
             Err(e) => {
                 tree.begin_child("error".to_owned())
