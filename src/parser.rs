@@ -8,7 +8,7 @@ pub struct Parser<'src, 'bump> {
     current: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Operator {
     Mult,
     Div,
