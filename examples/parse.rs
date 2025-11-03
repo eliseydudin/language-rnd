@@ -1,8 +1,11 @@
 use bumpalo::Bump;
-use cofy::{Expr, ExprInner, Lexer, LexerError, Operator, Parser, parser::AstInner};
-use core::error::Error;
+use cofy::{
+    Expr, ExprInner, Lexer, LexerError, Operator, Parser,
+    parser::{AstInner, Type},
+};
 use ptree::TreeBuilder;
 use std::{
+    error::Error,
     io::{Error as IoErr, stdin},
     ops::Deref,
 };
@@ -37,6 +40,25 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             print_expr(tree, data.deref());
             tree.end_child()
         }
+        ExprInner::Identifier(ident) => tree.add_empty_child(format!("ident {ident}")),
+    };
+}
+
+fn print_type(tree: &mut TreeBuilder, ty: &Type) {
+    match ty {
+        Type::Plain(name) => {
+            tree.add_empty_child(format!("plain `{name}`"));
+        }
+        Type::Function { params, returns } => {
+            tree.begin_child("fn".to_owned())
+                .begin_child("params".to_owned());
+            for param in params {
+                print_type(tree, param);
+            }
+            tree.end_child().begin_child("returns".to_owned());
+            print_type(tree, returns.as_ref());
+            tree.end_child().end_child();
+        }
     };
 }
 
@@ -49,6 +71,17 @@ fn print_tree(ast: Parser) {
                     let refmut = tree.begin_child(format!("const `{name}`"));
                     print_expr(refmut, &value);
                     refmut.end_child();
+                }
+                AstInner::FunctionPrototype {
+                    name,
+                    type_of,
+                    type_parameters,
+                } => {
+                    let refmut = tree.begin_child(format!("fn proto `{name}`"));
+                    print_type(refmut, &type_of);
+                    refmut
+                        .add_empty_child(format!("type params {type_parameters:?}"))
+                        .end_child();
                 }
             },
             Err(e) => {

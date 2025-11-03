@@ -22,6 +22,7 @@ fn calculate_expression(expr: &Expr) -> f64 {
         }
         ExprInner::Number(num) => num.parse().unwrap(),
         ExprInner::Unary { data, .. } => -calculate_expression(&*data),
+        _ => todo!("currently unsupported"),
     }
 }
 

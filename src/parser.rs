@@ -1,5 +1,5 @@
 use crate::{CowStr, SourcePosition, Token, TokenRepr, cow_str};
-use bumpalo::{Bump, boxed::Box, format};
+use bumpalo::{Bump, boxed::Box, collections::Vec, format};
 use core::{error, fmt};
 
 pub struct Parser<'src, 'bump> {
@@ -14,6 +14,15 @@ pub enum Operator {
     Div,
     Plus,
     Minus,
+}
+
+#[derive(Debug)]
+pub enum Type<'src, 'bump> {
+    Plain(&'src str),
+    Function {
+        params: Vec<'bump, Self>,
+        returns: Box<'bump, Self>,
+    },
 }
 
 impl From<TokenRepr> for Operator {
@@ -31,6 +40,7 @@ impl From<TokenRepr> for Operator {
 #[derive(Debug)]
 pub enum ExprInner<'src, 'bump> {
     Number(&'src str),
+    Identifier(&'src str),
     BinOp {
         left: Box<'bump, Expr<'src, 'bump>>,
         operator: Operator,
@@ -86,6 +96,13 @@ impl<'src, 'bump> Expr<'src, 'bump> {
         Self {
             pos,
             inner: ExprInner::Number(data),
+        }
+    }
+
+    pub fn identifier(pos: SourcePosition, data: &'src str) -> Self {
+        Self {
+            pos,
+            inner: ExprInner::Identifier(data),
         }
     }
 
@@ -284,6 +301,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 self.consume(TokenRepr::RParen)?;
                 Ok(exp)
             }
+            TokenRepr::Identifier => Ok(Expr::identifier(tok.pos, tok.data)),
             _ => todo!(),
         }
     }
@@ -303,6 +321,76 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             pos: begin.pos,
         })
     }
+
+    fn parse_type(&mut self) -> ParserResult<'src, Type<'src, 'bump>> {
+        // TODO, add support for more complex types
+        let res = self.consume(TokenRepr::Identifier)?;
+        Ok(Type::Plain(res.data))
+    }
+
+    fn parse_type_tuple(&mut self) -> ParserResult<'src, Vec<'bump, Type<'src, 'bump>>> {
+        let mut result = Vec::new_in(self.bump);
+        self.consume(TokenRepr::LParen)?;
+        let res = loop {
+            let tp = self.parse_type()?;
+            result.push(tp);
+
+            let curr = self.peek().ok_or_else(|| self.eof_error())?;
+            match curr.repr {
+                TokenRepr::RParen => break Ok(result),
+                TokenRepr::Coma => {
+                    self.advance();
+                    continue;
+                }
+                _ => {
+                    return Err(error!(
+                        curr,
+                        cow_str!(in self.bump; "unexpected token {curr:?}")
+                    ));
+                }
+            }
+        };
+
+        self.consume(TokenRepr::RParen)?;
+        res
+    }
+
+    fn parse_function_type(&mut self) -> ParserResult<'src, Type<'src, 'bump>> {
+        let params = self.parse_type_tuple()?;
+        self.consume(TokenRepr::Arrow)?;
+        let returns = self.parse_type()?;
+
+        Ok(Type::Function {
+            params,
+            returns: Box::new_in(returns, self.bump),
+        })
+    }
+
+    pub fn parse_function(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+        let begin = self.consume(TokenRepr::Fn)?;
+        let name = self.consume(TokenRepr::Identifier)?;
+
+        let type_parameters: &[Type<'src, 'bump>] = if self.check(TokenRepr::LAngle) {
+            todo!()
+        } else {
+            &[]
+        };
+
+        if self.check(TokenRepr::LParen) {
+            let type_of = self.parse_function_type()?;
+            self.consume(TokenRepr::Semicolon)?;
+            Ok(Ast {
+                inner: AstInner::FunctionPrototype {
+                    name: name.data,
+                    type_of,
+                    type_parameters,
+                },
+                pos: begin.pos,
+            })
+        } else {
+            todo!("normal functions are not yet implemented")
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -310,6 +398,11 @@ pub enum AstInner<'src, 'bump> {
     Const {
         name: &'src str,
         value: Expr<'src, 'bump>,
+    },
+    FunctionPrototype {
+        name: &'src str,
+        type_of: Type<'src, 'bump>,
+        type_parameters: &'bump [Type<'src, 'bump>],
     },
 }
 
@@ -326,7 +419,8 @@ impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
         let prev = self.peek()?;
         match prev.repr {
             TokenRepr::Const => Some(self.parse_const()),
-            _ => None,
+            TokenRepr::Fn => Some(self.parse_function()),
+            _ => todo!("{prev:?}"),
         }
     }
 }

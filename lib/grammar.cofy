@@ -302,7 +302,7 @@ fn has array elem =
 // and returns the weather in form of the later defined `Weather` type
 import lib.http;
 
-@derive(Convert)
+@convert
 type Weather = {
 	temperature: int,
 };
@@ -311,8 +311,8 @@ fn fetch_weather (http.Client) => http.HTTP<Weather>; // http.HTTP is a monad li
 fn fetch_weather client = with http.HTTP	
 	=> client
 	=> http.fetch_json("http://example.org/weather") // returns HTTP<any>
-	=> convert_to(&http.HTTP) // Option<HTTP>
-	=> case $ do
+	=> convert_to<Weather> // Option<Weather>
+	=> match $ do
 		None -> unreachable(),
 		Some(res) -> res;
 	// ^ could be replaced with `unwrap`
