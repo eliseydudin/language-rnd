@@ -50,9 +50,16 @@ pub enum ExprInner<'src, 'bump> {
         operator: Operator,
         data: Box<'bump, Expr<'src, 'bump>>,
     },
+    Access {
+        object: Box<'bump, Expr<'src, 'bump>>,
+        property: &'src str,
+    },
+    Call {
+        object: Box<'bump, Expr<'src, 'bump>>,
+        params: Vec<'bump, Expr<'src, 'bump>>,
+    },
 }
 
-#[expect(unused)]
 #[derive(Debug)]
 pub struct Expr<'src, 'bump> {
     inner: ExprInner<'src, 'bump>,
@@ -103,6 +110,36 @@ impl<'src, 'bump> Expr<'src, 'bump> {
         Self {
             pos,
             inner: ExprInner::Identifier(data),
+        }
+    }
+
+    pub fn access(
+        pos: SourcePosition,
+        bump: &'bump Bump,
+        object: Self,
+        property: &'src str,
+    ) -> Self {
+        Self {
+            pos,
+            inner: ExprInner::Access {
+                object: Box::new_in(object, bump),
+                property,
+            },
+        }
+    }
+
+    pub fn call(
+        pos: SourcePosition,
+        bump: &'bump Bump,
+        object: Self,
+        params: Vec<'bump, Self>,
+    ) -> Self {
+        Self {
+            pos,
+            inner: ExprInner::Call {
+                object: Box::new_in(object, bump),
+                params,
+            },
         }
     }
 
@@ -266,7 +303,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             ));
         }
 
-        self.primary()
+        self.primary(true)
     }
 
     pub fn consume(&mut self, tok: TokenRepr) -> ParserResult<'src, Token<'src>> {
@@ -290,19 +327,30 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         )
     }
 
-    pub fn primary(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+    pub fn primary(&mut self, complex_ident: bool) -> ParserResult<'src, Expr<'src, 'bump>> {
         let tok = self.peek().ok_or_else(|| self.eof_error())?;
-        self.advance().ok_or_else(|| self.eof_error())?;
 
         match tok.repr {
-            TokenRepr::Number => Ok(Expr::number(tok.pos, tok.data)),
+            TokenRepr::Number => {
+                self.advance().ok_or_else(|| self.eof_error())?;
+                Ok(Expr::number(tok.pos, tok.data))
+            }
             TokenRepr::LParen => {
+                self.advance().ok_or_else(|| self.eof_error())?;
                 let exp = self.expression()?;
                 self.consume(TokenRepr::RParen)?;
                 Ok(exp)
             }
-            TokenRepr::Identifier => Ok(Expr::identifier(tok.pos, tok.data)),
-            _ => todo!(),
+            TokenRepr::Identifier => {
+                let start = Expr::identifier(tok.pos, tok.data);
+                if complex_ident {
+                    self.parse_identifier_or_call(start, None)
+                } else {
+                    self.advance().ok_or_else(|| self.eof_error())?;
+                    Ok(start)
+                }
+            }
+            _ => todo!("on {:?}", tok.repr),
         }
     }
 
@@ -370,7 +418,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         let mut result = vec![in self.bump];
 
         while self.peek().ok_or_else(|| self.eof_error())?.repr != TokenRepr::Set {
-            result.push(self.primary()?)
+            result.push(self.primary(false)?)
         }
 
         Ok(result)
@@ -399,6 +447,65 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         Ok(result)
     }
 
+    fn parse_tuple(&mut self) -> ParserResult<'src, Vec<'bump, Expr<'src, 'bump>>> {
+        self.consume(TokenRepr::LParen)?;
+        let mut result = vec![in self.bump];
+
+        loop {
+            let expr = self.expression()?;
+            result.push(expr);
+
+            let next = self.advance().ok_or_else(|| self.eof_error())?;
+            match next.repr {
+                TokenRepr::Coma => continue,
+                TokenRepr::RParen => break,
+                _ => {
+                    return Err(error!(
+                        next,
+                        cow_str!(owned format!(in self.bump, "unexpected token of type {:?}", next.repr))
+                    ));
+                }
+            }
+        }
+
+        Ok(result)
+    }
+
+    fn parse_identifier_or_call(
+        &mut self,
+        start: Expr<'src, 'bump>,
+        type_params: Option<&'bump [Type<'src, 'bump>]>,
+    ) -> ParserResult<'src, Expr<'src, 'bump>> {
+        self.advance().ok_or_else(|| self.eof_error())?;
+        let next = self
+            .peek()
+            .expect("if advance doesn't fail then peek() doesn't return a None");
+
+        if next.repr == TokenRepr::Dot {
+            let property = self.peek().ok_or_else(|| self.eof_error())?;
+            let access = Expr::access(start.pos, self.bump, start, property.data);
+
+            self.advance().ok_or_else(|| self.eof_error())?;
+            self.advance().ok_or_else(|| self.eof_error())?;
+
+            self.parse_identifier_or_call(access, type_params)
+        } else if next.repr == TokenRepr::LParen {
+            let params = self.parse_tuple()?;
+
+            let function_call = Expr::call(start.pos, self.bump, start, params);
+            Ok(function_call)
+        } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
+            let type_params = self.parse_type_params()?;
+            self.parse_identifier_or_call(start, Some(type_params))
+        } else {
+            Ok(start)
+        }
+    }
+
+    fn parse_type_params(&mut self) -> ParserResult<'src, &'bump [Type<'src, 'bump>]> {
+        todo!()
+    }
+
     pub fn parse_function(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
         let begin = self.consume(TokenRepr::Fn)?;
         let name = self.consume(TokenRepr::Identifier)?;
@@ -424,6 +531,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             let params = self.parse_function_params()?;
             self.consume(TokenRepr::Set)?;
             let body = self.parse_function_body()?;
+
             Ok(Ast {
                 inner: AstInner::Function {
                     name: name.data,
@@ -433,6 +541,19 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 },
                 pos: begin.pos,
             })
+        }
+    }
+
+    pub fn synchronize(&mut self) {
+        const STATEMENT_STARTS: &[TokenRepr] = &[TokenRepr::Const, TokenRepr::Fn];
+
+        loop {
+            match self.peek() {
+                Some(tok) if STATEMENT_STARTS.contains(&tok.repr) => break,
+                _ => {
+                    self.advance();
+                }
+            }
         }
     }
 }
@@ -470,7 +591,15 @@ impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
         match prev.repr {
             TokenRepr::Const => Some(self.parse_const()),
             TokenRepr::Fn => Some(self.parse_function()),
-            _ => todo!("{prev:?}"),
+            _ => {
+                let error = error!(
+                    prev,
+                    cow_str!(owned format!(in self.bump, "unrecognized statement start {:?}", prev))
+                );
+
+                self.synchronize();
+                Some(Err(error))
+            }
         }
     }
 }

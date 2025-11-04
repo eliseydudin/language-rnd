@@ -36,11 +36,33 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
         }
         ExprInner::Unary { operator, data } => {
             tree.begin_child("unary".to_owned());
-            tree.add_empty_child(format!("{operator:?}"));
+            tree.add_empty_child(format!("op {}", op_to_str(*operator)));
             print_expr(tree, data.deref());
             tree.end_child()
         }
         ExprInner::Identifier(ident) => tree.add_empty_child(format!("ident {ident}")),
+        ExprInner::Call { object, params } => {
+            let mutref = tree
+                .begin_child("call".to_owned())
+                .begin_child("object".to_owned());
+            print_expr(mutref, object.as_ref());
+            mutref.end_child().begin_child("params".to_owned());
+            for param in params {
+                print_expr(mutref, param)
+            }
+
+            tree.end_child().end_child()
+        }
+        ExprInner::Access { object, property } => {
+            let mutref = tree
+                .begin_child("access".to_owned())
+                .begin_child("object".to_owned());
+            print_expr(mutref, object.as_ref());
+            mutref
+                .end_child()
+                .add_empty_child(format!("property `{property}`"))
+                .end_child()
+        }
     };
 }
 
