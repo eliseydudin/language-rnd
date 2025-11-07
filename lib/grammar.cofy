@@ -303,11 +303,20 @@ fn has array elem =
 import lib.http;
 
 @convert
-type Weather = {
-	temperature: int,
-};
+type Location = ...;
+@convert
+type WeatherType = ...;
 
-fn fetch_weather (http.Client) => http.HTTP<Weather>; // http.HTTP is a monad like IO
+@convert
+type Weather = 
+	temperature: int
+	& location: Location
+	& wtype: Weather;
+
+alias FetchWeather = http.HTTP<Weather>;
+// `FetchWeather` and `http.HTTP<Weather>` are the same and can be used interchangebly
+
+fn fetch_weather (http.Client) => FetchWeather; // http.HTTP is a monad like IO
 fn fetch_weather client = with http.HTTP	
 	=> client
 	=> http.fetch_json("http://example.org/weather") // returns HTTP<any>
@@ -316,3 +325,42 @@ fn fetch_weather client = with http.HTTP
 		None -> unreachable(),
 		Some(res) -> res;
 	// ^ could be replaced with `unwrap`
+
+trait ImageEXT = 
+	fn dimensions (self) => (uint, uint)
+	& fn resized (self, (uint, uint)) => ImageResult<self>
+	& ...;
+
+type Image<SizeT> =
+	RGB(RGBImage<SizeT>)
+	| HSB(HSBImage<SizeT>)
+	| HSL(HSLImage<SizeT>)
+	| CMYK(CMYKImage;
+	
+impl<T> ImageEXT > Image<T> = {
+	fn dimensions image = 
+		match image do	
+			Image.RGB(i) 
+			| Image.HSB(i) 
+			| Image.HSL(i) 
+			| Image.CMYK(i) => super.dimensions(i) 
+			// super refers to the currently implemented trait
+			
+	fn resized image size = ...;
+	
+	...
+};
+
+type Result<T, E> = Ok(T) | Err(E);
+
+module os = {
+	type OSError = ...;
+	alias OSResult<T> = Result<T, OSError>;
+
+	fn getpid () => int;
+	fn kill (int) => OSResult<()>;
+	
+	...
+	
+	export { OSError, getpid, kill, ... };
+};

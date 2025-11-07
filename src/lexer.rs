@@ -1,8 +1,4 @@
-use core::cmp;
-use core::error::Error;
-use core::fmt;
-use core::ops;
-use std::fmt::Display;
+use core::{cmp, error::Error, fmt, ops};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorRepr {
@@ -72,7 +68,7 @@ impl<T: cmp::PartialEq> cmp::PartialEq for WithPosOrEof<T> {
     }
 }
 
-impl<T: Display> fmt::Display for WithPosOrEof<T> {
+impl<T: fmt::Display> fmt::Display for WithPosOrEof<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Pos(p) => write!(f, "{p}"),
