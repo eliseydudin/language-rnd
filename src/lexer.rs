@@ -152,6 +152,10 @@ pub enum TokenRepr {
 
     Const,
     Fn,
+    If,
+    For,
+    Then,
+    Else,
 
     Comment,
 }
@@ -178,6 +182,10 @@ impl<'a> Token<'a> {
         let repr = match self.data {
             "const" => TokenRepr::Const,
             "fn" => TokenRepr::Fn,
+            "if" => TokenRepr::If,
+            "for" => TokenRepr::For,
+            "then" => TokenRepr::Then,
+            "else" => TokenRepr::Else,
             _ => self.repr,
         };
 

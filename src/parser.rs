@@ -14,6 +14,8 @@ pub enum Operator {
     Div,
     Plus,
     Minus,
+    Bt,
+    Lt,
 }
 
 #[derive(Debug)]
@@ -32,6 +34,8 @@ impl From<TokenRepr> for Operator {
             TokenRepr::Div => Operator::Div,
             TokenRepr::Plus => Operator::Plus,
             TokenRepr::Minus => Operator::Minus,
+            TokenRepr::LAngle => Operator::Lt,
+            TokenRepr::RAngle => Operator::Bt,
             _ => panic!("invalid operator"),
         }
     }
@@ -58,6 +62,11 @@ pub enum ExprInner<'src, 'bump> {
     Call {
         object: Box<'bump, Expr<'src, 'bump>>,
         params: Vec<'bump, Expr<'src, 'bump>>,
+    },
+    If {
+        condition: Box<'bump, Expr<'src, 'bump>>,
+        main_body: Box<'bump, Expr<'src, 'bump>>,
+        else_body: Option<Box<'bump, Expr<'src, 'bump>>>,
     },
 }
 
@@ -147,6 +156,23 @@ impl<'src, 'bump> Expr<'src, 'bump> {
             inner: ExprInner::Call {
                 object: Box::new_in(object, bump),
                 params,
+            },
+        }
+    }
+
+    pub fn if_expr(
+        pos: SourcePosition,
+        bump: &'bump Bump,
+        condition: Self,
+        main_body: Self,
+        else_body: Option<Self>,
+    ) -> Self {
+        Self {
+            pos,
+            inner: ExprInner::If {
+                condition: Box::new_in(condition, bump),
+                main_body: Box::new_in(main_body, bump),
+                else_body: else_body.map(|e| Box::new_in(e, bump)),
             },
         }
     }
@@ -356,6 +382,10 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                     Ok(start)
                 }
             }
+            TokenRepr::If => {
+                self.current -= 1;
+                self.parse_if_expr()
+            }
             _ => todo!("on {:?}", tok.repr),
         }
     }
@@ -564,6 +594,24 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 }
             }
         }
+    }
+
+    fn parse_if_expr(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+        let start = self.consume(TokenRepr::If)?;
+        let condition = self.equality()?;
+        self.consume(TokenRepr::Then)?;
+        let main_body = self.expression()?;
+
+        let else_body = if self.check(TokenRepr::Else) {
+            self.consume(TokenRepr::Else)?;
+            Some(self.expression()?)
+        } else {
+            None
+        };
+
+        Ok(Expr::if_expr(
+            start.pos, self.bump, condition, main_body, else_body,
+        ))
     }
 }
 

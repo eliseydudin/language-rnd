@@ -16,6 +16,8 @@ fn op_to_str(op: Operator) -> &'static str {
         Operator::Minus => "-",
         Operator::Mult => "*",
         Operator::Plus => "+",
+        Operator::Bt => ">",
+        Operator::Lt => "<",
     }
 }
 
@@ -63,6 +65,28 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
                 .end_child()
                 .add_empty_child(format!("property `{property}`"))
                 .end_child()
+        }
+        ExprInner::If {
+            condition,
+            main_body,
+            else_body,
+        } => {
+            let mutref = tree
+                .begin_child("if".to_owned())
+                .begin_child("condition".to_owned());
+            print_expr(mutref, condition.as_ref());
+            mutref.end_child().begin_child("then".to_owned());
+            print_expr(mutref, main_body.as_ref());
+            mutref.end_child();
+
+            match else_body.as_ref() {
+                Some(else_body) => {
+                    mutref.begin_child("else".to_owned());
+                    print_expr(mutref, else_body.as_ref());
+                    mutref.end_child()
+                }
+                None => mutref,
+            }
         }
     };
 }
