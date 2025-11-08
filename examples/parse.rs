@@ -109,6 +109,18 @@ fn print_type(tree: &mut TreeBuilder, ty: &Type) {
             print_type(tree, returns.as_ref());
             tree.end_child().end_child();
         }
+        Type::Tuple(types) => {
+            tree.begin_child("tuple".to_owned());
+            for ty in types {
+                print_type(tree, ty)
+            }
+            tree.end_child();
+        }
+        Type::WithTypeParams(name, params) => {
+            tree.begin_child(format!("with params `{name}`"));
+            tree.add_empty_child(format!("type params {params:?}"));
+            tree.end_child();
+        }
     };
 }
 

@@ -28,6 +28,8 @@ pub enum Type<'src, 'bump> {
         params: Vec<'bump, Self>,
         returns: Box<'bump, Self>,
     },
+    Tuple(Vec<'bump, Self>),
+    WithTypeParams(&'src str, &'bump [Type<'src, 'bump>]),
 }
 
 impl From<TokenRepr> for Operator {
@@ -417,9 +419,30 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
     }
 
     fn parse_type(&mut self) -> ParserResult<'src, Type<'src, 'bump>> {
-        // TODO, add support for more complex types
-        let res = self.consume(TokenRepr::Identifier)?;
-        Ok(Type::Plain(res.data))
+        let tok = self.advance().ok_or_else(|| self.eof_error())?;
+        match tok.repr {
+            TokenRepr::Identifier => {
+                if self.check(TokenRepr::LAngle) {
+                    let type_params = self.parse_type_params()?;
+                    Ok(Type::WithTypeParams(tok.data, type_params))
+                } else {
+                    Ok(Type::Plain(tok.data))
+                }
+            }
+            TokenRepr::LParen => {
+                self.current -= 1;
+                let params = self.parse_type_tuple()?;
+
+                if self.check(TokenRepr::Arrow) {
+                    self.consume(TokenRepr::Arrow)?;
+                    let returns = Box::new_in(self.parse_type()?, self.bump);
+                    Ok(Type::Function { params, returns })
+                } else {
+                    Ok(Type::Tuple(params))
+                }
+            }
+            _ => Err(error!(tok, cow_str!(in self.bump; "unexpected token"))),
+        }
     }
 
     fn parse_type_tuple(&mut self) -> ParserResult<'src, Vec<'bump, Type<'src, 'bump>>> {
@@ -544,7 +567,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         self.consume(start)?;
 
         loop {
-            if self.peek().is_some_and(|tok| tok.repr == end) {
+            if self.check(end) {
                 self.consume(end)?;
                 break;
             }

@@ -364,3 +364,32 @@ module os = {
 	
 	export { OSError, getpid, kill, ... };
 };
+
+// the monad trait allows you to chain functions and modify state
+// this trait is implemented by IO, HTTP, Result, Option and eg
+// `change` replaces an old value with a new one all while keeping a 
+// monad around the types
+// `apply` applies a function to self to return a new value
+// `return` creates a new monad value
+trait Monad<T> with Other = {
+	fn change (self<T>, self<Other>) => self<Other>;
+	fn apply (self<T>, (T) => self<Other>) => self<Other>;
+	fn return (T) => self<T>; 
+};
+
+fn modify<T> (Monad<T>, (T) => T) => Monad<T>;
+fn modify monad func = 
+	Monad.apply( monad, |inner| Monad.return(func(inner)) );
+
+// for example, IO
+fn write_array<T> (Writer, [T]) => IO<Writer>;
+fn write_array fmt array = with IO 
+	// with IO converts all IO<T> values into T but makes it so that the final
+	// expression of the function is also an IO
+	=> write(fmt, "[ ") // write (Writer, T) => IO<Writer>
+	=> for elem in array do // `for` returns an iterator...
+		write($, f"{elem}, ") 
+	// ...which is then applied to the currently held expression
+	// essentially it does Monad.apply(Monad.apply(Monad.apply(...
+	// for every element in the iterator
+	=> write("]");
