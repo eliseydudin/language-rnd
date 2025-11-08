@@ -16,8 +16,11 @@ fn op_to_str(op: Operator) -> &'static str {
         Operator::Minus => "-",
         Operator::Mult => "*",
         Operator::Plus => "+",
-        Operator::Bt => ">",
+        Operator::Ge => ">=",
+        Operator::Le => "<=",
+        Operator::Gt => ">",
         Operator::Lt => "<",
+        Operator::Eq => "==",
     }
 }
 
@@ -183,6 +186,10 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let lexer = Lexer::new(&input);
     let tokens = lexer.collect::<Result<Vec<_>, LexerError>>()?;
+    for token in &tokens {
+        println!("TOKEN: {token:?}");
+    }
+
     print_tree(Parser::new(&bump, &tokens));
     println!("bytes allocated on the bump: {}", bump.allocated_bytes());
 

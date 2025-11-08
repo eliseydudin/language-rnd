@@ -14,8 +14,11 @@ pub enum Operator {
     Div,
     Plus,
     Minus,
-    Bt,
+    Gt,
     Lt,
+    Ge,
+    Le,
+    Eq,
 }
 
 #[derive(Debug)]
@@ -35,7 +38,10 @@ impl From<TokenRepr> for Operator {
             TokenRepr::Plus => Operator::Plus,
             TokenRepr::Minus => Operator::Minus,
             TokenRepr::LAngle => Operator::Lt,
-            TokenRepr::RAngle => Operator::Bt,
+            TokenRepr::RAngle => Operator::Gt,
+            TokenRepr::Le => Operator::Le,
+            TokenRepr::Ge => Operator::Ge,
+            TokenRepr::Equal => Operator::Eq,
             _ => panic!("invalid operator"),
         }
     }
@@ -228,6 +234,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         let mut expr = self.comparison()?;
 
         while self.match_next(&[TokenRepr::Equal]) {
+            self.current += 1;
             let operator = self
                 .previous()
                 .expect("after match next we are guaranteed not to go out of bounds");
@@ -253,7 +260,6 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
     pub fn match_next(&mut self, reprs: &[TokenRepr]) -> bool {
         for r in reprs {
             if self.check(*r) {
-                self.advance();
                 return true;
             }
         }
@@ -280,11 +286,12 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         let mut expr = self.term()?;
 
         while self.match_next(&[
-            TokenRepr::Gt,
+            TokenRepr::Ge,
             TokenRepr::RAngle,
-            TokenRepr::Lt,
+            TokenRepr::Le,
             TokenRepr::LAngle,
         ]) {
+            self.current += 1;
             let operator = self
                 .previous()
                 .expect("after match next we are guaranteed not to go out of bounds");
@@ -299,6 +306,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         let mut expr = self.factor()?;
 
         while self.match_next(&[TokenRepr::Minus, TokenRepr::Plus]) {
+            self.advance();
             let operator = self
                 .previous()
                 .expect("after match next we are guaranteed not to go out of bounds");
@@ -313,6 +321,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         let mut expr = self.unary()?;
 
         while self.match_next(&[TokenRepr::Div, TokenRepr::Mult]) {
+            self.advance();
             let operator = self
                 .previous()
                 .expect("after match next we are guaranteed not to go out of bounds");
@@ -325,6 +334,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
 
     pub fn unary(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
         if self.match_next(&[TokenRepr::Minus]) {
+            self.advance();
             let operator = self
                 .previous()
                 .expect("after match next we are guaranteed not to go out of bounds");
@@ -496,8 +506,15 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             let function_call = Expr::call(start.pos, self.bump, start, params);
             Ok(function_call)
         } else if next.repr == TokenRepr::LAngle && type_params.is_none() {
-            let type_params = self.parse_type_params()?;
-            self.parse_identifier_or_call(start, Some(type_params))
+            // very bad code but idk how to parse it in any other way
+            let save = self.current;
+            match self.parse_type_params() {
+                Ok(data) => self.parse_identifier_or_call(start, Some(data)),
+                Err(_) => {
+                    self.current = save;
+                    Ok(start)
+                }
+            }
         } else {
             Ok(start)
         }

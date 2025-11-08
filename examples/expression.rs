@@ -18,8 +18,11 @@ fn calculate_expression(expr: &Expr) -> f64 {
                 Operator::Minus => left - right,
                 Operator::Div => left / right,
                 Operator::Mult => left * right,
-                Operator::Bt => (left > right) as i32 as f64,
+                Operator::Gt => (left > right) as i32 as f64,
                 Operator::Lt => (left < right) as i32 as f64,
+                Operator::Ge => (left >= right) as i32 as f64,
+                Operator::Le => (left <= right) as i32 as f64,
+                Operator::Eq => (left == right) as i32 as f64,
             }
         }
         ExprInner::Number(num) => num.parse().unwrap(),

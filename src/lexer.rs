@@ -135,8 +135,8 @@ pub enum TokenRepr {
     Dot,
     Coma,
 
-    Lt,
-    Gt,
+    Le,
+    Ge,
     Set,
     Equal,
 
@@ -350,8 +350,8 @@ impl<'a> Lexer<'a> {
             b'}' => self.small_token(TokenRepr::RFigure, 1),
             b'[' => self.small_token(TokenRepr::LBracket, 1),
             b']' => self.small_token(TokenRepr::RBracket, 1),
-            b'<' => self.small_token_or(TokenRepr::LAngle, b'=', TokenRepr::Lt),
-            b'>' => self.small_token_or(TokenRepr::RAngle, b'=', TokenRepr::Gt),
+            b'<' => self.small_token_or(TokenRepr::LAngle, b'=', TokenRepr::Le),
+            b'>' => self.small_token_or(TokenRepr::RAngle, b'=', TokenRepr::Ge),
             b'=' => self.small_token_or_several(
                 TokenRepr::Set,
                 b"=>",
