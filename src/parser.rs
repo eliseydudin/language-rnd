@@ -542,7 +542,13 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
     {
         let mut result = vec![in self.bump];
         self.consume(start)?;
+
         loop {
+            if self.peek().is_some_and(|tok| tok.repr == end) {
+                self.consume(end)?;
+                break;
+            }
+
             let expr = elem_fn(self)?;
             result.push(expr);
 
