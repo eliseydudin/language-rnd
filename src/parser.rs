@@ -672,6 +672,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         loop {
             match self.peek() {
                 Some(tok) if STATEMENT_STARTS.contains(&tok.repr) => break,
+                None => break,
                 _ => {
                     self.advance();
                 }
