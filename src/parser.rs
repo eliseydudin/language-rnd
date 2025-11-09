@@ -76,6 +76,11 @@ pub enum ExprInner<'src, 'bump> {
         main_body: Box<'bump, Expr<'src, 'bump>>,
         else_body: Option<Box<'bump, Expr<'src, 'bump>>>,
     },
+    For {
+        var: &'src str,
+        container: Box<'bump, Expr<'src, 'bump>>,
+        action: Box<'bump, Expr<'src, 'bump>>,
+    },
 }
 
 #[derive(Debug)]
@@ -181,6 +186,23 @@ impl<'src, 'bump> Expr<'src, 'bump> {
                 condition: Box::new_in(condition, bump),
                 main_body: Box::new_in(main_body, bump),
                 else_body: else_body.map(|e| Box::new_in(e, bump)),
+            },
+        }
+    }
+
+    pub fn for_expr(
+        pos: SourcePosition,
+        bump: &'bump Bump,
+        var: &'src str,
+        container: Self,
+        action: Self,
+    ) -> Self {
+        Self {
+            pos,
+            inner: ExprInner::For {
+                var,
+                container: Box::new_in(container, bump),
+                action: Box::new_in(action, bump),
             },
         }
     }
@@ -397,6 +419,10 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             TokenRepr::If => {
                 self.current -= 1;
                 self.parse_if_expr()
+            }
+            TokenRepr::For => {
+                self.current -= 1;
+                self.parse_for_expr()
             }
             _ => todo!("on {:?}", tok.repr),
         }
@@ -668,6 +694,19 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
 
         Ok(Expr::if_expr(
             start.pos, self.bump, condition, main_body, else_body,
+        ))
+    }
+
+    fn parse_for_expr(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
+        let start = self.consume(TokenRepr::For)?;
+        let var = self.consume(TokenRepr::Identifier)?;
+        self.consume(TokenRepr::In)?;
+        let container = self.expression()?;
+        self.consume(TokenRepr::Do)?;
+        let action = self.expression()?;
+
+        Ok(Expr::for_expr(
+            start.pos, self.bump, var.data, container, action,
         ))
     }
 }

@@ -158,6 +158,7 @@ pub enum TokenRepr {
     Else,
     With,
     Do,
+    In,
 
     Comment,
 }
@@ -190,6 +191,7 @@ impl<'a> Token<'a> {
             "else" => TokenRepr::Else,
             "do" => TokenRepr::Do,
             "with" => TokenRepr::With,
+            "in" => TokenRepr::In,
             _ => self.repr,
         };
 

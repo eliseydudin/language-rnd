@@ -51,7 +51,7 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             let mutref = tree
                 .begin_child("call".to_owned())
                 .begin_child("object".to_owned());
-            print_expr(mutref, object.as_ref());
+            print_expr(mutref, object);
             mutref.end_child().begin_child("params".to_owned());
             for param in params {
                 print_expr(mutref, param)
@@ -63,7 +63,7 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             let mutref = tree
                 .begin_child("access".to_owned())
                 .begin_child("object".to_owned());
-            print_expr(mutref, object.as_ref());
+            print_expr(mutref, object);
             mutref
                 .end_child()
                 .add_empty_child(format!("property `{property}`"))
@@ -77,19 +77,32 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             let mutref = tree
                 .begin_child("if".to_owned())
                 .begin_child("condition".to_owned());
-            print_expr(mutref, condition.as_ref());
+            print_expr(mutref, condition);
             mutref.end_child().begin_child("then".to_owned());
-            print_expr(mutref, main_body.as_ref());
+            print_expr(mutref, main_body);
             mutref.end_child();
 
-            match else_body.as_ref() {
+            match else_body {
                 Some(else_body) => {
                     mutref.begin_child("else".to_owned());
-                    print_expr(mutref, else_body.as_ref());
+                    print_expr(mutref, else_body);
                     mutref.end_child()
                 }
                 None => mutref,
             }
+        }
+        ExprInner::For {
+            var,
+            container,
+            action,
+        } => {
+            tree.begin_child("for".to_owned())
+                .add_empty_child(format!("var `{var}`"))
+                .begin_child("in".to_owned());
+            print_expr(tree, container);
+            tree.end_child().begin_child("action".to_owned());
+            print_expr(tree, action);
+            tree.end_child()
         }
     };
 }
@@ -106,7 +119,7 @@ fn print_type(tree: &mut TreeBuilder, ty: &Type) {
                 print_type(tree, param);
             }
             tree.end_child().begin_child("returns".to_owned());
-            print_type(tree, returns.as_ref());
+            print_type(tree, returns);
             tree.end_child().end_child();
         }
         Type::Tuple(types) => {
