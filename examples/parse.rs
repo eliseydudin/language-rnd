@@ -150,6 +150,7 @@ fn print_tree(ast: Parser) {
                     params,
                     body,
                     type_parameters,
+                    with_type,
                 } => {
                     let refmut = tree
                         .begin_child(format!("fn `{name}`"))
@@ -164,6 +165,12 @@ fn print_tree(ast: Parser) {
                     refmut
                         .end_child()
                         .add_empty_child(format!("type params {type_parameters:?}"))
+                        .add_empty_child(format!(
+                            "with `{}`",
+                            with_type
+                                .map(|tp| format!("{tp:?}"))
+                                .unwrap_or_else(|| "None".to_owned())
+                        ))
                         .end_child();
                 }
             },

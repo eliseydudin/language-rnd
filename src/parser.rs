@@ -615,6 +615,16 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         } else {
             let params = self.parse_function_params()?;
             self.consume(TokenRepr::Set)?;
+
+            let with_type = if self.check(TokenRepr::With) {
+                self.consume(TokenRepr::With)?;
+                let with = Some(self.parse_type()?);
+                self.consume(TokenRepr::Arrow)?;
+                with
+            } else {
+                None
+            };
+
             let body = self.parse_function_body()?;
 
             Ok(Ast {
@@ -623,6 +633,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                     params,
                     type_parameters,
                     body,
+                    with_type,
                 },
                 pos: begin.pos,
             })
@@ -674,6 +685,7 @@ pub enum AstInner<'src, 'bump> {
     },
     Function {
         name: &'src str,
+        with_type: Option<Type<'src, 'bump>>,
         params: Vec<'bump, Expr<'src, 'bump>>,
         body: Vec<'bump, Expr<'src, 'bump>>,
         type_parameters: &'bump [Type<'src, 'bump>],
