@@ -95,7 +95,12 @@ pub enum ExprInner<'src, 'bump> {
         action: Box<'bump, Expr<'src, 'bump>>,
     },
     Tuple(Vec<'bump, Expr<'src, 'bump>>),
+    List(Vec<'bump, Expr<'src, 'bump>>),
     Keyword(Keyword),
+    IndexAccess {
+        object: Box<'bump, Expr<'src, 'bump>>,
+        index: Box<'bump, Expr<'src, 'bump>>,
+    },
 }
 
 #[derive(Debug)]
@@ -437,6 +442,19 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                     })
                 }
             }
+            TokenRepr::LBracket => {
+                self.current -= 1;
+                let exp = self.parse_tuple_with(
+                    TokenRepr::LBracket,
+                    Self::expression,
+                    TokenRepr::Coma,
+                    TokenRepr::RBracket,
+                )?;
+                Ok(Expr {
+                    pos: tok.pos,
+                    inner: ExprInner::List(exp),
+                })
+            }
             TokenRepr::Identifier => {
                 let start = Expr::identifier(tok.pos, tok.data);
                 if complex_ident {
@@ -607,6 +625,21 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                     Ok(start)
                 }
             }
+        } else if next.repr == TokenRepr::LBracket {
+            let b_start = self.consume(TokenRepr::LBracket)?;
+            let index = self.expression()?;
+            self.consume(TokenRepr::RBracket)?;
+            self.current -= 1;
+
+            let next = Expr {
+                pos: b_start.pos,
+                inner: ExprInner::IndexAccess {
+                    object: Box::new_in(start, self.bump),
+                    index: Box::new_in(index, self.bump),
+                },
+            };
+
+            self.parse_identifier_or_call(next, type_params)
         } else {
             Ok(start)
         }

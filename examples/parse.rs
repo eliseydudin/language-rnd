@@ -113,6 +113,22 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             tree.end_child()
         }
         ExprInner::Keyword(key) => tree.add_empty_child(format!("keyword {key:?}")),
+        ExprInner::IndexAccess { object, index } => {
+            let mutref = tree
+                .begin_child("access".to_owned())
+                .begin_child("object".to_owned());
+            print_expr(mutref, object);
+            mutref.end_child().begin_child("index".to_owned());
+            print_expr(mutref, index);
+            mutref.end_child()
+        }
+        ExprInner::List(list) => {
+            tree.begin_child("list".to_owned());
+            for elem in list {
+                print_expr(tree, elem);
+            }
+            tree.end_child()
+        }
     };
 }
 
