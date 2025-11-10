@@ -161,6 +161,8 @@ pub enum TokenRepr {
     In,
 
     Comment,
+
+    Pipe,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -368,6 +370,7 @@ impl<'a> Lexer<'a> {
             b'+' => self.small_token(TokenRepr::Plus, 1),
             b'-' => self.small_token(TokenRepr::Minus, 1),
             b'*' => self.small_token(TokenRepr::Mult, 1),
+            b'$' => self.small_token(TokenRepr::Pipe, 1),
             b'/' => {
                 if self.current() == Some(b'/') {
                     self.advance();

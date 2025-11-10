@@ -335,7 +335,7 @@ type Image<SizeT> =
 	RGB(RGBImage<SizeT>)
 	| HSB(HSBImage<SizeT>)
 	| HSL(HSLImage<SizeT>)
-	| CMYK(CMYKImage;
+	| CMYK(CMYKImage<SizeT>);
 	
 impl<T> ImageEXT > Image<T> = {
 	fn dimensions image = 

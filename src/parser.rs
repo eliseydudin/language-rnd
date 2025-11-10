@@ -54,6 +54,7 @@ pub enum ExprInner<'src, 'bump> {
     Number(&'src str),
     Identifier(&'src str),
     String(&'src str),
+    Pipe,
     BinOp {
         left: Box<'bump, Expr<'src, 'bump>>,
         operator: Operator,
@@ -155,6 +156,13 @@ impl<'src, 'bump> Expr<'src, 'bump> {
                 object: Box::new_in(object, bump),
                 property,
             },
+        }
+    }
+
+    pub fn pipe(pos: SourcePosition) -> Self {
+        Self {
+            pos,
+            inner: ExprInner::Pipe,
         }
     }
 
@@ -402,6 +410,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         match tok.repr {
             TokenRepr::Number => Ok(Expr::number(tok.pos, tok.data)),
             TokenRepr::String => Ok(Expr::string(tok.pos, tok.data)),
+            TokenRepr::Pipe => Ok(Expr::pipe(tok.pos)),
             TokenRepr::LParen => {
                 let exp = self.expression()?;
                 self.consume(TokenRepr::RParen)?;

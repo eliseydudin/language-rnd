@@ -104,6 +104,7 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             print_expr(tree, action);
             tree.end_child()
         }
+        ExprInner::Pipe => tree.add_empty_child("pipe $".to_owned()),
     };
 }
 
