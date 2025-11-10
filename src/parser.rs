@@ -23,12 +23,18 @@ pub enum Operator {
 
 #[derive(Debug)]
 pub enum Type<'src, 'bump> {
+    // T
     Plain(&'src str),
+    // [T]
+    Iter(Box<'bump, Self>),
+    // (params) => returns
     Function {
         params: Vec<'bump, Self>,
         returns: Box<'bump, Self>,
     },
+    // (0, 1, 2)
     Tuple(Vec<'bump, Self>),
+    // Ty<A, B, C>
     WithTypeParams(&'src str, &'bump [Type<'src, 'bump>]),
 }
 
@@ -475,6 +481,11 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 } else {
                     Ok(Type::Tuple(params))
                 }
+            }
+            TokenRepr::LBracket => {
+                let inner = self.parse_type()?;
+                self.consume(TokenRepr::RBracket)?;
+                Ok(Type::Iter(Box::new_in(inner, self.bump)))
             }
             _ => Err(error!(tok, cow_str!(in self.bump; "unexpected token"))),
         }

@@ -135,6 +135,11 @@ fn print_type(tree: &mut TreeBuilder, ty: &Type) {
             tree.add_empty_child(format!("type params {params:?}"));
             tree.end_child();
         }
+        Type::Iter(iter) => {
+            tree.begin_child("iter".to_owned());
+            print_type(tree, iter);
+            tree.end_child();
+        }
     };
 }
 
