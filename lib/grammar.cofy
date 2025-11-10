@@ -393,3 +393,13 @@ fn write_array fmt array = with IO
 	// essentially it does Monad.apply(Monad.apply(Monad.apply(...
 	// for every element in the iterator
 	=> write("]");
+
+fn zip<A, B> ([A], [B]) => [(A, B)];
+fn zip array_a array_b = 
+	for i in range(0, min(len(array_a), len(array_b)) do
+		(array_a[i], array_b[i]);
+
+fn safe_zip<A, B> ([A], [B]) => [(Option<A>, Option<B>)];
+fn safe_zip array_a array_b = 
+	for i in range(0, max(len(array_a), len(array_b))) do
+		(get(array_a, i), get(array_b, i));

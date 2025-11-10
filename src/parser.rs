@@ -88,6 +88,7 @@ pub enum ExprInner<'src, 'bump> {
         container: Box<'bump, Expr<'src, 'bump>>,
         action: Box<'bump, Expr<'src, 'bump>>,
     },
+    Tuple(Vec<'bump, Expr<'src, 'bump>>),
 }
 
 #[derive(Debug)]
@@ -418,9 +419,16 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             TokenRepr::String => Ok(Expr::string(tok.pos, tok.data)),
             TokenRepr::Pipe => Ok(Expr::pipe(tok.pos)),
             TokenRepr::LParen => {
-                let exp = self.expression()?;
-                self.consume(TokenRepr::RParen)?;
-                Ok(exp)
+                self.current -= 1;
+                let mut exp = self.parse_tuple()?;
+                if exp.len() == 1 {
+                    Ok(exp.remove(0))
+                } else {
+                    Ok(Expr {
+                        pos: tok.pos,
+                        inner: ExprInner::Tuple(exp),
+                    })
+                }
             }
             TokenRepr::Identifier => {
                 let start = Expr::identifier(tok.pos, tok.data);
@@ -622,15 +630,16 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             result.push(expr);
 
             let next = self.advance().ok_or_else(|| self.eof_error())?;
-            match next.repr {
-                d if d == delimeter => continue,
-                e if e == end => break,
-                _ => {
-                    return Err(error!(
-                        next,
-                        cow_str!(owned format!(in self.bump, "unexpected token of type {:?}", next.repr))
-                    ));
-                }
+
+            if next.repr == delimeter {
+                continue;
+            } else if next.repr == end {
+                break;
+            } else {
+                return Err(error!(
+                    next,
+                    cow_str!(owned format!(in self.bump, "unexpected token of type {:?}", next.repr))
+                ));
             }
         }
 
@@ -703,6 +712,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
     fn parse_if_expr(&mut self) -> ParserResult<'src, Expr<'src, 'bump>> {
         let start = self.consume(TokenRepr::If)?;
         let condition = self.equality()?;
+
         self.consume(TokenRepr::Then)?;
         let main_body = self.expression()?;
 

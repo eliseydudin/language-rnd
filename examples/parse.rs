@@ -105,6 +105,13 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             tree.end_child()
         }
         ExprInner::Pipe => tree.add_empty_child("pipe $".to_owned()),
+        ExprInner::Tuple(tuple) => {
+            tree.begin_child("tuple".to_owned());
+            for elem in tuple {
+                print_expr(tree, elem);
+            }
+            tree.end_child()
+        }
     };
 }
 
