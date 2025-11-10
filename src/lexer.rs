@@ -1,4 +1,4 @@
-use core::{cmp, error::Error, fmt, ops};
+use core::{error::Error, fmt, ops};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ErrorRepr {
@@ -49,40 +49,6 @@ impl<T> ops::Deref for WithPos<T> {
 impl<T> ops::DerefMut for WithPos<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.inner
-    }
-}
-
-#[derive(Debug)]
-pub enum WithPosOrEof<T> {
-    Pos(WithPos<T>),
-    Eof(T),
-}
-
-impl<T: cmp::PartialEq> cmp::PartialEq for WithPosOrEof<T> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Pos(s), Self::Pos(o)) => s.inner == o.inner,
-            (Self::Eof(s), Self::Eof(o)) => s == o,
-            _ => false,
-        }
-    }
-}
-
-impl<T: fmt::Display> fmt::Display for WithPosOrEof<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Pos(p) => write!(f, "{p}"),
-            Self::Eof(t) => write!(f, "<EOF> {t}"),
-        }
-    }
-}
-
-impl<T: 'static + Error> Error for WithPosOrEof<T> {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-            Self::Pos(p) => Some(p),
-            Self::Eof(t) => Some(t),
-        }
     }
 }
 
