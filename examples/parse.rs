@@ -129,6 +129,16 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             }
             tree.end_child()
         }
+        ExprInner::Lambda { params, body } => {
+            tree.begin_child("lambda function".to_owned())
+                .begin_child("params".to_owned());
+            for param in params {
+                print_expr(tree, param);
+            }
+            tree.end_child().begin_child("body".to_owned());
+            print_expr(tree, body);
+            tree.end_child().end_child()
+        }
     };
 }
 

@@ -109,6 +109,7 @@ pub enum TokenRepr {
     Colon,
     Semicolon,
 
+    FatArrow,
     Arrow,
 
     Plus,
@@ -334,12 +335,12 @@ impl<'a> Lexer<'a> {
             b'=' => self.small_token_or_several(
                 TokenRepr::Set,
                 b"=>",
-                &[TokenRepr::Equal, TokenRepr::Arrow],
+                &[TokenRepr::Equal, TokenRepr::FatArrow],
             ),
             b':' => self.small_token(TokenRepr::Colon, 1),
             b';' => self.small_token(TokenRepr::Semicolon, 1),
             b'+' => self.small_token(TokenRepr::Plus, 1),
-            b'-' => self.small_token(TokenRepr::Minus, 1),
+            b'-' => self.small_token_or(TokenRepr::Minus, b'>', TokenRepr::Arrow),
             b'*' => self.small_token(TokenRepr::Mult, 1),
             b'$' => self.small_token(TokenRepr::Pipe, 1),
             b'/' => {
@@ -404,7 +405,7 @@ impl<'a> Iterator for Lexer<'a> {
         let next = self.skip_whitespace()?;
         Some(
             match next {
-                b'a'..=b'z' | b'A'..=b'Z' => self.lex_identifier(),
+                b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.lex_identifier(),
                 b'0'..=b'9' => self.lex_number(),
                 b'"' => self.lex_string(),
                 f => self.lex_fallback(f),

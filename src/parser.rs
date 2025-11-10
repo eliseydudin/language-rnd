@@ -101,6 +101,10 @@ pub enum ExprInner<'src, 'bump> {
         object: Box<'bump, Expr<'src, 'bump>>,
         index: Box<'bump, Expr<'src, 'bump>>,
     },
+    Lambda {
+        params: Vec<'bump, Expr<'src, 'bump>>,
+        body: Box<'bump, Expr<'src, 'bump>>,
+    },
 }
 
 #[derive(Debug)]
@@ -480,6 +484,24 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 pos: tok.pos,
                 inner: ExprInner::Keyword(Keyword::Break),
             }),
+            TokenRepr::LFigure => {
+                self.current -= 1;
+                let params = self.parse_tuple_with(
+                    TokenRepr::LFigure,
+                    Self::expression,
+                    TokenRepr::Coma,
+                    TokenRepr::RFigure,
+                )?;
+                self.consume(TokenRepr::Arrow)?;
+                self.consume(TokenRepr::LFigure)?;
+                let body = Box::new_in(self.expression()?, self.bump);
+                self.consume(TokenRepr::RFigure)?;
+
+                Ok(Expr {
+                    pos: tok.pos,
+                    inner: ExprInner::Lambda { params, body },
+                })
+            }
             _ => todo!("on {:?}", tok.repr),
         }
     }
@@ -515,8 +537,8 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 self.current -= 1;
                 let params = self.parse_type_tuple()?;
 
-                if self.check(TokenRepr::Arrow) {
-                    self.consume(TokenRepr::Arrow)?;
+                if self.check(TokenRepr::FatArrow) {
+                    self.consume(TokenRepr::FatArrow)?;
                     let returns = Box::new_in(self.parse_type()?, self.bump);
                     Ok(Type::Function { params, returns })
                 } else {
@@ -543,7 +565,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
 
     fn parse_function_type(&mut self) -> ParserResult<'src, Type<'src, 'bump>> {
         let params = self.parse_type_tuple()?;
-        self.consume(TokenRepr::Arrow)?;
+        self.consume(TokenRepr::FatArrow)?;
         let returns = self.parse_type()?;
 
         Ok(Type::Function {
@@ -571,7 +593,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
 
             let next = self.advance().ok_or_else(|| self.eof_error())?;
             match next.repr {
-                TokenRepr::Arrow => continue,
+                TokenRepr::FatArrow => continue,
                 TokenRepr::Semicolon => break,
                 _ => {
                     return Err(error!(
@@ -619,7 +641,10 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             // very bad code but idk how to parse it in any other way
             let save = self.current;
             match self.parse_type_params() {
-                Ok(data) => self.parse_identifier_or_call(start, Some(data)),
+                Ok(data) => {
+                    self.current -= 1;
+                    self.parse_identifier_or_call(start, Some(data))
+                }
                 Err(_) => {
                     self.current = save;
                     Ok(start)
@@ -722,7 +747,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             let with_type = if self.check(TokenRepr::With) {
                 self.consume(TokenRepr::With)?;
                 let with = Some(self.parse_type()?);
-                self.consume(TokenRepr::Arrow)?;
+                self.consume(TokenRepr::FatArrow)?;
                 with
             } else {
                 None
