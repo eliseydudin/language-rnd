@@ -56,6 +56,12 @@ impl From<TokenRepr> for Operator {
 }
 
 #[derive(Debug)]
+pub enum Keyword {
+    Skip,
+    Break,
+}
+
+#[derive(Debug)]
 pub enum ExprInner<'src, 'bump> {
     Number(&'src str),
     Identifier(&'src str),
@@ -89,6 +95,7 @@ pub enum ExprInner<'src, 'bump> {
         action: Box<'bump, Expr<'src, 'bump>>,
     },
     Tuple(Vec<'bump, Expr<'src, 'bump>>),
+    Keyword(Keyword),
 }
 
 #[derive(Debug)]
@@ -447,6 +454,14 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 self.current -= 1;
                 self.parse_for_expr()
             }
+            TokenRepr::Skip => Ok(Expr {
+                pos: tok.pos,
+                inner: ExprInner::Keyword(Keyword::Skip),
+            }),
+            TokenRepr::Break => Ok(Expr {
+                pos: tok.pos,
+                inner: ExprInner::Keyword(Keyword::Break),
+            }),
             _ => todo!("on {:?}", tok.repr),
         }
     }

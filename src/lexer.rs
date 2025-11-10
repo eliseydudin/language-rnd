@@ -129,6 +129,9 @@ pub enum TokenRepr {
     Comment,
 
     Pipe,
+
+    Skip,
+    Break,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -160,6 +163,8 @@ impl<'a> Token<'a> {
             "do" => TokenRepr::Do,
             "with" => TokenRepr::With,
             "in" => TokenRepr::In,
+            "skip" => TokenRepr::Skip,
+            "break" => TokenRepr::Break,
             _ => self.repr,
         };
 

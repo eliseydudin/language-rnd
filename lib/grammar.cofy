@@ -403,3 +403,33 @@ fn safe_zip<A, B> ([A], [B]) => [(Option<A>, Option<B>)];
 fn safe_zip array_a array_b = 
 	for i in range(0, max(len(array_a), len(array_b))) do
 		(get(array_a, i), get(array_b, i));
+
+fn map<A, B> ([A], (A) => B) => [B];
+fn map array func = 	
+	for elem in array do
+		func(elem);
+
+fn skip_none<T> ([Option<T>]) => [T];
+fn skip_none array = 
+	for elem in array do
+		if is_none(elem) then 
+			skip
+		else 
+			unwrap(elem);
+
+fn filter<T> ([T], (T) => Option<T>) => [T];
+fn filter array func = skip_none(map(array, func));
+
+fn abs n = if n > 0 then n else -n;
+
+fn sum<T: Add + Default> ([T]) => T;
+fn sum array = with Compute
+	=> compute(default<T>())
+	=> for elem in array do
+		apply($, |data| data + elem); // Compute<T>
+	// when with is used `for` loops that return a monad are
+	// automatically computed (without creating an iterator)
+
+trait Iterator<T> = {
+	fn next (self) => Option<T>;
+}; // implementing this trait allows you to use `for` loops on it

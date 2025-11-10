@@ -112,6 +112,7 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             }
             tree.end_child()
         }
+        ExprInner::Keyword(key) => tree.add_empty_child(format!("keyword {key:?}")),
     };
 }
 
