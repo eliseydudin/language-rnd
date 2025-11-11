@@ -1,0 +1,71 @@
+use crate::{
+    Expr, Lexer, Parser, SourcePosition, Token,
+    parser::{AstInner, Type},
+};
+use bumpalo::{Bump, boxed::Box, vec};
+
+fn tokens(source: &str) -> Vec<Token> {
+    Lexer::new(source)
+        .map(|tok| match tok {
+            Ok(tok) => tok,
+            Err(e) => panic!("while lexing tokens: {e}"),
+        })
+        .collect::<Vec<Token>>()
+}
+
+#[test]
+fn fib_test() {
+    let bump = Bump::new();
+    let source = include_str!("../test/fib.cofy");
+    let toks = tokens(source);
+    let mut parser = Parser::new(&bump, &toks);
+
+    let prototype = parser.next().unwrap().unwrap();
+    let impl_0 = parser.next().unwrap().unwrap();
+    let impl_1 = parser.next().unwrap().unwrap();
+    let generic = parser.next().unwrap().unwrap();
+
+    assert_eq!(
+        prototype.inner,
+        AstInner::FunctionPrototype {
+            name: "fib",
+            type_of: Type::Function {
+                params: vec![in &bump; Type::Plain("uint")],
+                returns: Box::new_in(Type::Plain("uint"), &bump),
+            },
+            type_parameters: &[]
+        }
+    );
+
+    assert_eq!(
+        impl_0.inner,
+        AstInner::Function {
+            name: "fib",
+            with_type: None,
+            params: vec![in &bump; Expr::number(SourcePosition {line: 2, symbol: 7}, "0")],
+            body: vec![in &bump; Expr::number(SourcePosition { line: 2, symbol: 11 }, "1")],
+            type_parameters: &[]
+        }
+    );
+
+    assert_eq!(
+        impl_1.inner,
+        AstInner::Function {
+            name: "fib",
+            with_type: None,
+            params: vec![in &bump; Expr::number(SourcePosition {line: 3, symbol: 7}, "1")],
+            body: vec![in &bump; Expr::number(SourcePosition { line: 3, symbol: 11 }, "1")],
+            type_parameters: &[]
+        }
+    );
+
+    assert!(matches!(
+        generic.inner,
+        AstInner::Function {
+            name: "fib",
+            with_type: None,
+            type_parameters: &[],
+            ..
+        }
+    ));
+}

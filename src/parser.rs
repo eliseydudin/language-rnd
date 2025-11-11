@@ -21,7 +21,7 @@ pub enum Operator {
     Eq,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Type<'src, 'bump> {
     // T
     Plain(&'src str),
@@ -55,13 +55,13 @@ impl From<TokenRepr> for Operator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Keyword {
     Skip,
     Break,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ExprInner<'src, 'bump> {
     Number(&'src str),
     Identifier(&'src str),
@@ -107,7 +107,7 @@ pub enum ExprInner<'src, 'bump> {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Expr<'src, 'bump> {
     inner: ExprInner<'src, 'bump>,
     pos: SourcePosition,
@@ -840,7 +840,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum AstInner<'src, 'bump> {
     Const {
         name: &'src str,
@@ -865,7 +865,7 @@ pub enum AstInner<'src, 'bump> {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Ast<'src, 'bump> {
     pub inner: AstInner<'src, 'bump>,
     pub pos: SourcePosition,
