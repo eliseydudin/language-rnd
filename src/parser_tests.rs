@@ -42,7 +42,7 @@ fn fib_test() {
         AstInner::Function {
             name: "fib",
             with_type: None,
-            params: vec![in &bump; Expr::number(SourcePosition {line: 2, symbol: 7}, "0")],
+            params: vec![in &bump; Expr::number(SourcePosition { line: 2, symbol: 7 }, "0")],
             body: vec![in &bump; Expr::number(SourcePosition { line: 2, symbol: 11 }, "1")],
             type_parameters: &[]
         }
@@ -68,4 +68,38 @@ fn fib_test() {
             ..
         }
     ));
+}
+
+#[test]
+fn template_test() {
+    let bump = Bump::new();
+    let source = include_str!("../test/template.cofy");
+    let toks = tokens(source);
+    let mut parser = Parser::new(&bump, &toks);
+
+    let prototype = parser.next().unwrap().unwrap();
+    let variant = parser.next().unwrap().unwrap();
+
+    assert_eq!(
+        prototype.inner,
+        AstInner::FunctionPrototype {
+            name: "variant",
+            type_of: Type::Function {
+                params: vec![in &bump; Type::Plain("T")],
+                returns: Box::new_in(Type::Plain("T"), &bump),
+            },
+            type_parameters: &[Type::Plain("T")]
+        }
+    );
+
+    assert_eq!(
+        variant.inner,
+        AstInner::Function {
+            name: "variant",
+            with_type: None,
+            params: vec![in &bump; Expr::identifier(SourcePosition { line: 1, symbol: 14 }, "t")],
+            body: vec![in &bump; Expr::identifier(SourcePosition { line: 1, symbol: 18 }, "t")],
+            type_parameters: &[Type::Plain("T")]
+        }
+    );
 }
