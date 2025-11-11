@@ -226,6 +226,17 @@ fn print_tree(ast: Parser) {
                         ))
                         .end_child();
                 }
+                AstInner::Alias {
+                    name,
+                    type_parameters,
+                    aliasing,
+                } => {
+                    tree.begin_child(format!("alias `{name}`"))
+                        .add_empty_child(format!("type params {type_parameters:?}"))
+                        .begin_child("aliasing".to_owned());
+                    print_type(&mut tree, &aliasing);
+                    tree.end_child().end_child();
+                }
             },
             Err(e) => {
                 tree.begin_child("error".to_owned())

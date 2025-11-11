@@ -133,6 +133,11 @@ pub enum TokenRepr {
 
     Skip,
     Break,
+
+    Trait,
+    Type,
+    Alias,
+    Data,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -166,6 +171,10 @@ impl<'a> Token<'a> {
             "in" => TokenRepr::In,
             "skip" => TokenRepr::Skip,
             "break" => TokenRepr::Break,
+            "trait" => TokenRepr::Trait,
+            "data" => TokenRepr::Data,
+            "type" => TokenRepr::Type,
+            "alias" => TokenRepr::Alias,
             _ => self.repr,
         };
 

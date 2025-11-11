@@ -768,8 +768,33 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         }
     }
 
+    pub fn parse_alias(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+        let start = self.consume(TokenRepr::Alias)?;
+        let name = self.consume(TokenRepr::Identifier)?.data;
+
+        let type_parameters = if self.check(TokenRepr::LAngle) {
+            self.parse_type_params()?
+        } else {
+            &[]
+        };
+
+        self.consume(TokenRepr::Set)?;
+
+        let aliasing = self.parse_type()?;
+        self.consume(TokenRepr::Semicolon)?;
+
+        Ok(Ast {
+            pos: start.pos,
+            inner: AstInner::Alias {
+                name,
+                type_parameters,
+                aliasing,
+            },
+        })
+    }
+
     pub fn synchronize(&mut self) {
-        const STATEMENT_STARTS: &[TokenRepr] = &[TokenRepr::Const, TokenRepr::Fn];
+        const STATEMENT_STARTS: &[TokenRepr] = &[TokenRepr::Const, TokenRepr::Fn, TokenRepr::Alias];
 
         loop {
             match self.peek() {
@@ -833,6 +858,11 @@ pub enum AstInner<'src, 'bump> {
         body: Vec<'bump, Expr<'src, 'bump>>,
         type_parameters: &'bump [Type<'src, 'bump>],
     },
+    Alias {
+        name: &'src str,
+        type_parameters: &'bump [Type<'src, 'bump>],
+        aliasing: Type<'src, 'bump>,
+    },
 }
 
 #[derive(Debug)]
@@ -849,6 +879,7 @@ impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
         match prev.repr {
             TokenRepr::Const => Some(self.parse_const()),
             TokenRepr::Fn => Some(self.parse_function()),
+            TokenRepr::Alias => Some(self.parse_alias()),
             _ => {
                 let error = error!(
                     prev,
