@@ -63,47 +63,68 @@ pub enum Keyword {
 
 #[derive(Debug, PartialEq)]
 pub enum ExprInner<'src, 'bump> {
+    // 238.39
     Number(&'src str),
+    // bar
     Identifier(&'src str),
+    // "foo"
     String(&'src str),
+    // $
     Pipe,
+    // left op right
     BinOp {
         left: Box<'bump, Expr<'src, 'bump>>,
         operator: Operator,
         right: Box<'bump, Expr<'src, 'bump>>,
     },
+    // -obj
     Unary {
         operator: Operator,
         data: Box<'bump, Expr<'src, 'bump>>,
     },
+    // object.property
     Access {
         object: Box<'bump, Expr<'src, 'bump>>,
         property: &'src str,
     },
+    // object(param1, param2)
     Call {
         object: Box<'bump, Expr<'src, 'bump>>,
         params: Vec<'bump, Expr<'src, 'bump>>,
     },
+    // if condition then main_body else else_body
     If {
         condition: Box<'bump, Expr<'src, 'bump>>,
         main_body: Box<'bump, Expr<'src, 'bump>>,
         else_body: Option<Box<'bump, Expr<'src, 'bump>>>,
     },
+    // for var in container do action
     For {
         var: &'src str,
         container: Box<'bump, Expr<'src, 'bump>>,
         action: Box<'bump, Expr<'src, 'bump>>,
     },
+    // (exp1, exp2)
     Tuple(Vec<'bump, Expr<'src, 'bump>>),
+    // [exp1, exp2]
     List(Vec<'bump, Expr<'src, 'bump>>),
+    // break or skip
     Keyword(Keyword),
+
+    // object[index]
     IndexAccess {
         object: Box<'bump, Expr<'src, 'bump>>,
         index: Box<'bump, Expr<'src, 'bump>>,
     },
+    // { param1, param2 } -> { body }
     Lambda {
         params: Vec<'bump, Expr<'src, 'bump>>,
         body: Box<'bump, Expr<'src, 'bump>>,
+    },
+    // object { field1, field2: value }
+    Constructor {
+        object: Box<'bump, Expr<'src, 'bump>>,
+        fields: Vec<'bump, (&'src str, Option<Expr<'src, 'bump>>)>,
     },
 }
 
@@ -411,11 +432,15 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                 .advance()
                 .expect("shouldn't be None since self.check is true"))
         } else {
-            let last = self.previous().unwrap();
-            Err(error!(
-                last,
-                format!(in self.bump, "expected a {:?}, found a {:?}", tok, last.repr)
-            ))
+            let err = match self.peek() {
+                Some(last) => error!(
+                    last,
+                    format!(in self.bump, "expected a {:?}, found a {:?}", tok, last.repr)
+                ),
+                None => self.eof_error(),
+            };
+
+            Err(err)
         }
     }
 
@@ -616,6 +641,21 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         )
     }
 
+    fn parse_constructor_field(
+        &mut self,
+    ) -> ParserResult<'src, (&'src str, Option<Expr<'src, 'bump>>)> {
+        let field = self.consume(TokenRepr::Identifier)?;
+
+        let data = if self.check(TokenRepr::Colon) {
+            self.consume(TokenRepr::Colon)?;
+            Some(self.expression()?)
+        } else {
+            None
+        };
+
+        Ok((field.data, data))
+    }
+
     fn parse_identifier_or_call(
         &mut self,
         start: Expr<'src, 'bump>,
@@ -650,6 +690,23 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
                     Ok(start)
                 }
             }
+        } else if next.repr == TokenRepr::LFigure {
+            let fields = self.parse_tuple_with(
+                TokenRepr::LFigure,
+                Self::parse_constructor_field,
+                TokenRepr::Coma,
+                TokenRepr::RFigure,
+            )?;
+
+            let next = Expr {
+                pos: start.pos,
+                inner: ExprInner::Constructor {
+                    object: Box::new_in(start, self.bump),
+                    fields,
+                },
+            };
+
+            Ok(next)
         } else if next.repr == TokenRepr::LBracket {
             let b_start = self.consume(TokenRepr::LBracket)?;
             let index = self.expression()?;

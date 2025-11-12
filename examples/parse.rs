@@ -139,6 +139,25 @@ fn print_expr(tree: &mut TreeBuilder, expr: &Expr) {
             print_expr(tree, body);
             tree.end_child().end_child()
         }
+        ExprInner::Constructor { object, fields } => {
+            tree.begin_child("constructor".to_owned())
+                .begin_child("object".to_owned());
+            print_expr(tree, object);
+            tree.end_child().begin_child("fields".to_owned());
+            for (field, value) in fields {
+                tree.begin_child(format!("field `{field}`"));
+                match value.as_ref() {
+                    Some(val) => {
+                        print_expr(tree, val);
+                    }
+                    None => {
+                        tree.add_empty_child("<no value>".to_owned());
+                    }
+                };
+                tree.end_child();
+            }
+            tree
+        }
     };
 }
 
