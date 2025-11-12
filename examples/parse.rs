@@ -256,6 +256,18 @@ fn print_tree(ast: Parser) {
                     print_type(&mut tree, &aliasing);
                     tree.end_child().end_child();
                 }
+                AstInner::Type {
+                    name,
+                    type_parameters,
+                    fields,
+                } => {
+                    tree.begin_child(format!("type `{name}`"))
+                        .add_empty_child(format!("type params {type_parameters:?}"))
+                        .begin_child("fields".to_owned());
+                    for (name, ty) in fields {
+                        tree.add_empty_child(format!("`{name}`: {ty:?}"));
+                    }
+                }
             },
             Err(e) => {
                 tree.begin_child("error".to_owned())

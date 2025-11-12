@@ -851,7 +851,12 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
     }
 
     pub fn synchronize(&mut self) {
-        const STATEMENT_STARTS: &[TokenRepr] = &[TokenRepr::Const, TokenRepr::Fn, TokenRepr::Alias];
+        const STATEMENT_STARTS: &[TokenRepr] = &[
+            TokenRepr::Const,
+            TokenRepr::Fn,
+            TokenRepr::Alias,
+            TokenRepr::Type,
+        ];
 
         loop {
             match self.peek() {
@@ -895,6 +900,44 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             start.pos, self.bump, var.data, container, action,
         ))
     }
+
+    fn parse_type_field(&mut self) -> ParserResult<'src, (&'src str, Type<'src, 'bump>)> {
+        let name = self.consume(TokenRepr::Identifier)?;
+        self.consume(TokenRepr::Colon)?;
+        let value = self.parse_type()?;
+
+        Ok((name.data, value))
+    }
+
+    pub fn parse_type_decl(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+        self.consume(TokenRepr::Type)?;
+        let name = self.consume(TokenRepr::Identifier)?;
+
+        let type_parameters = if self.check(TokenRepr::LAngle) {
+            self.parse_type_params()?
+        } else {
+            &[]
+        };
+
+        self.consume(TokenRepr::Set)?;
+
+        let fields = self.parse_tuple_with(
+            TokenRepr::LFigure,
+            Self::parse_type_field,
+            TokenRepr::Coma,
+            TokenRepr::RFigure,
+        )?;
+        self.consume(TokenRepr::Semicolon)?;
+
+        Ok(Ast {
+            pos: name.pos,
+            inner: AstInner::Type {
+                name: name.data,
+                type_parameters,
+                fields,
+            },
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -920,6 +963,11 @@ pub enum AstInner<'src, 'bump> {
         type_parameters: &'bump [Type<'src, 'bump>],
         aliasing: Type<'src, 'bump>,
     },
+    Type {
+        name: &'src str,
+        type_parameters: &'bump [Type<'src, 'bump>],
+        fields: Vec<'bump, (&'src str, Type<'src, 'bump>)>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -937,6 +985,7 @@ impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
             TokenRepr::Const => Some(self.parse_const()),
             TokenRepr::Fn => Some(self.parse_function()),
             TokenRepr::Alias => Some(self.parse_alias()),
+            TokenRepr::Type => Some(self.parse_type_decl()),
             _ => {
                 let error = error!(
                     prev,
