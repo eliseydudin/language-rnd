@@ -457,3 +457,9 @@ type Foo<E> = {
 alias Baz = Foo<int>;
 
 export { Option, Foo, Baz };
+
+trait Monad with A, B = { 
+	fn return (A) => self<A>;
+	fn replace (self<A>, B) => self<B>;
+	fn modify (self<A>, (A) => self<B>) => self<B>;
+};

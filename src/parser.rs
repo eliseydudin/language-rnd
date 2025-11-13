@@ -856,6 +856,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             TokenRepr::Fn,
             TokenRepr::Alias,
             TokenRepr::Type,
+            TokenRepr::Trait,
         ];
 
         loop {
@@ -948,6 +949,48 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             },
         })
     }
+
+    pub fn parse_trait(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+        let start = self.consume(TokenRepr::Trait)?;
+        let name = self.consume(TokenRepr::Identifier)?;
+
+        let with = if self.check(TokenRepr::With) {
+            self.parse_tuple_with(
+                TokenRepr::With,
+                Self::parse_type,
+                TokenRepr::Coma,
+                TokenRepr::Set,
+            )?
+        } else {
+            self.consume(TokenRepr::Set)?;
+            vec![in self.bump]
+        };
+
+        let mut prototypes = vec![in self.bump];
+
+        self.consume(TokenRepr::LFigure)?;
+        loop {
+            let curr = self.peek().ok_or_else(|| self.eof_error())?;
+            if curr.repr == TokenRepr::RFigure {
+                self.consume(TokenRepr::RFigure)?;
+                break;
+            }
+
+            let func = self.parse_function()?;
+            prototypes.push(func)
+        }
+
+        self.consume(TokenRepr::Semicolon)?;
+
+        Ok(Ast {
+            pos: start.pos,
+            inner: AstInner::Trait {
+                name: name.data,
+                with,
+                prototypes,
+            },
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -978,6 +1021,11 @@ pub enum AstInner<'src, 'bump> {
         type_parameters: &'bump [Type<'src, 'bump>],
         fields: Option<Vec<'bump, (&'src str, Type<'src, 'bump>)>>,
     },
+    Trait {
+        name: &'src str,
+        with: Vec<'bump, Type<'src, 'bump>>,
+        prototypes: Vec<'bump, Ast<'src, 'bump>>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -996,6 +1044,7 @@ impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
             TokenRepr::Fn => Some(self.parse_function()),
             TokenRepr::Alias => Some(self.parse_alias()),
             TokenRepr::Type => Some(self.parse_type_decl()),
+            TokenRepr::Trait => Some(self.parse_trait()),
             _ => {
                 let error = error!(
                     prev,

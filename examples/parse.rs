@@ -1,7 +1,7 @@
 use bumpalo::Bump;
 use cofy::{
     Expr, ExprInner, Lexer, LexerError, Operator, Parser,
-    parser::{AstInner, Type},
+    parser::{Ast, AstInner, ParserResult, Type},
 };
 use ptree::TreeBuilder;
 use std::{
@@ -196,93 +196,114 @@ fn print_type(tree: &mut TreeBuilder, ty: &Type) {
     };
 }
 
+fn print_ast(tree: &mut TreeBuilder, a: ParserResult<Ast>) {
+    match a {
+        Ok(elem) => match elem.inner {
+            AstInner::Const { name, value } => {
+                let refmut = tree.begin_child(format!("const `{name}`"));
+                print_expr(refmut, &value);
+                refmut.end_child();
+            }
+            AstInner::FunctionPrototype {
+                name,
+                type_of,
+                type_parameters,
+            } => {
+                let refmut = tree.begin_child(format!("fn proto `{name}`"));
+                print_type(refmut, &type_of);
+                refmut
+                    .add_empty_child(format!("type params {type_parameters:?}"))
+                    .end_child();
+            }
+            AstInner::Function {
+                name,
+                params,
+                body,
+                type_parameters,
+                with_type,
+            } => {
+                let refmut = tree
+                    .begin_child(format!("fn `{name}`"))
+                    .begin_child("params".to_owned());
+                for param in params.iter() {
+                    print_expr(refmut, param);
+                }
+                refmut.end_child().begin_child("body".to_owned());
+                for pipe in body.iter() {
+                    print_expr(refmut, pipe);
+                }
+                refmut
+                    .end_child()
+                    .add_empty_child(format!("type params {type_parameters:?}"))
+                    .add_empty_child(format!(
+                        "with `{}`",
+                        with_type
+                            .map(|tp| format!("{tp:?}"))
+                            .unwrap_or_else(|| "None".to_owned())
+                    ))
+                    .end_child();
+            }
+            AstInner::Alias {
+                name,
+                type_parameters,
+                aliasing,
+            } => {
+                tree.begin_child(format!("alias `{name}`"))
+                    .add_empty_child(format!("type params {type_parameters:?}"))
+                    .begin_child("aliasing".to_owned());
+                print_type(tree, &aliasing);
+                tree.end_child().end_child();
+            }
+            AstInner::Type {
+                name,
+                type_parameters,
+                fields,
+            } => {
+                tree.begin_child(format!("type `{name}`"))
+                    .add_empty_child(format!("type params {type_parameters:?}"))
+                    .begin_child("fields".to_owned());
+
+                match fields {
+                    Some(f) => {
+                        for (name, ty) in f {
+                            tree.add_empty_child(format!("`{name}`: {ty:?}"));
+                        }
+                    }
+                    None => {
+                        tree.add_empty_child("...".to_owned());
+                    }
+                }
+
+                tree.end_child().end_child();
+            }
+            AstInner::Trait {
+                name,
+                with,
+                prototypes,
+            } => {
+                tree.begin_child(format!("type `{name}`"))
+                    .add_empty_child(format!("with {with:?}"))
+                    .begin_child("prototypes".to_owned());
+
+                for proto in prototypes {
+                    print_ast(tree, Ok(proto))
+                }
+
+                tree.end_child().end_child();
+            }
+        },
+        Err(e) => {
+            tree.begin_child("error".to_owned())
+                .add_empty_child(e.to_string())
+                .end_child();
+        }
+    };
+}
+
 fn print_tree(ast: Parser) {
     let mut tree = TreeBuilder::new("stdin's abstract syntax tree".to_owned());
     for a in ast {
-        match a {
-            Ok(elem) => match elem.inner {
-                AstInner::Const { name, value } => {
-                    let refmut = tree.begin_child(format!("const `{name}`"));
-                    print_expr(refmut, &value);
-                    refmut.end_child();
-                }
-                AstInner::FunctionPrototype {
-                    name,
-                    type_of,
-                    type_parameters,
-                } => {
-                    let refmut = tree.begin_child(format!("fn proto `{name}`"));
-                    print_type(refmut, &type_of);
-                    refmut
-                        .add_empty_child(format!("type params {type_parameters:?}"))
-                        .end_child();
-                }
-                AstInner::Function {
-                    name,
-                    params,
-                    body,
-                    type_parameters,
-                    with_type,
-                } => {
-                    let refmut = tree
-                        .begin_child(format!("fn `{name}`"))
-                        .begin_child("params".to_owned());
-                    for param in params.iter() {
-                        print_expr(refmut, param);
-                    }
-                    refmut.end_child().begin_child("body".to_owned());
-                    for pipe in body.iter() {
-                        print_expr(refmut, pipe);
-                    }
-                    refmut
-                        .end_child()
-                        .add_empty_child(format!("type params {type_parameters:?}"))
-                        .add_empty_child(format!(
-                            "with `{}`",
-                            with_type
-                                .map(|tp| format!("{tp:?}"))
-                                .unwrap_or_else(|| "None".to_owned())
-                        ))
-                        .end_child();
-                }
-                AstInner::Alias {
-                    name,
-                    type_parameters,
-                    aliasing,
-                } => {
-                    tree.begin_child(format!("alias `{name}`"))
-                        .add_empty_child(format!("type params {type_parameters:?}"))
-                        .begin_child("aliasing".to_owned());
-                    print_type(&mut tree, &aliasing);
-                    tree.end_child().end_child();
-                }
-                AstInner::Type {
-                    name,
-                    type_parameters,
-                    fields,
-                } => {
-                    tree.begin_child(format!("type `{name}`"))
-                        .add_empty_child(format!("type params {type_parameters:?}"))
-                        .begin_child("fields".to_owned());
-
-                    match fields {
-                        Some(f) => {
-                            for (name, ty) in f {
-                                tree.add_empty_child(format!("`{name}`: {ty:?}"));
-                            }
-                        }
-                        None => {
-                            tree.add_empty_child("...".to_owned());
-                        }
-                    }
-                }
-            },
-            Err(e) => {
-                tree.begin_child("error".to_owned())
-                    .add_empty_child(e.to_string())
-                    .end_child();
-            }
-        };
+        print_ast(&mut tree, a);
     }
 
     let tree = tree.build();
