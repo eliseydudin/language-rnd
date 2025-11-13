@@ -264,8 +264,16 @@ fn print_tree(ast: Parser) {
                     tree.begin_child(format!("type `{name}`"))
                         .add_empty_child(format!("type params {type_parameters:?}"))
                         .begin_child("fields".to_owned());
-                    for (name, ty) in fields {
-                        tree.add_empty_child(format!("`{name}`: {ty:?}"));
+
+                    match fields {
+                        Some(f) => {
+                            for (name, ty) in f {
+                                tree.add_empty_child(format!("`{name}`: {ty:?}"));
+                            }
+                        }
+                        None => {
+                            tree.add_empty_child("...".to_owned());
+                        }
                     }
                 }
             },

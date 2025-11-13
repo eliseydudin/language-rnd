@@ -138,6 +138,8 @@ pub enum TokenRepr {
     Type,
     Alias,
     Data,
+
+    Elipsis,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -333,7 +335,7 @@ impl<'a> Lexer<'a> {
         let result = match start {
             b'(' => self.small_token(TokenRepr::LParen, 1),
             b')' => self.small_token(TokenRepr::RParen, 1),
-            b'.' => self.small_token(TokenRepr::Dot, 1),
+            b'.' => self.small_token_or(TokenRepr::Dot, b'.', TokenRepr::Elipsis),
             b',' => self.small_token(TokenRepr::Coma, 1),
             b'{' => self.small_token(TokenRepr::LFigure, 1),
             b'}' => self.small_token(TokenRepr::RFigure, 1),

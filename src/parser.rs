@@ -920,13 +920,23 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         };
 
         self.consume(TokenRepr::Set)?;
+        let save = self.current;
+        self.consume(TokenRepr::LFigure)?;
 
-        let fields = self.parse_tuple_with(
-            TokenRepr::LFigure,
-            Self::parse_type_field,
-            TokenRepr::Coma,
-            TokenRepr::RFigure,
-        )?;
+        let fields = if self.check(TokenRepr::Elipsis) {
+            self.consume(TokenRepr::Elipsis)?;
+            self.consume(TokenRepr::RFigure)?;
+            None
+        } else {
+            self.current = save;
+            Some(self.parse_tuple_with(
+                TokenRepr::LFigure,
+                Self::parse_type_field,
+                TokenRepr::Coma,
+                TokenRepr::RFigure,
+            )?)
+        };
+
         self.consume(TokenRepr::Semicolon)?;
 
         Ok(Ast {
@@ -966,7 +976,7 @@ pub enum AstInner<'src, 'bump> {
     Type {
         name: &'src str,
         type_parameters: &'bump [Type<'src, 'bump>],
-        fields: Vec<'bump, (&'src str, Type<'src, 'bump>)>,
+        fields: Option<Vec<'bump, (&'src str, Type<'src, 'bump>)>>,
     },
 }
 
