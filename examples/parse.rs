@@ -281,7 +281,7 @@ fn print_ast(tree: &mut TreeBuilder, a: ParserResult<Ast>) {
                 with,
                 prototypes,
             } => {
-                tree.begin_child(format!("type `{name}`"))
+                tree.begin_child(format!("trait `{name}`"))
                     .add_empty_child(format!("with {with:?}"))
                     .begin_child("prototypes".to_owned());
 

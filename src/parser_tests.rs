@@ -33,7 +33,7 @@ fn fib_test() {
                 params: vec![in &bump; Type::Plain("uint")],
                 returns: Box::new_in(Type::Plain("uint"), &bump),
             },
-            type_parameters: &[]
+            type_parameters: vec![in &bump]
         }
     );
 
@@ -44,7 +44,7 @@ fn fib_test() {
             with_type: None,
             params: vec![in &bump; Expr::number(SourcePosition { line: 2, symbol: 7 }, "0")],
             body: vec![in &bump; Expr::number(SourcePosition { line: 2, symbol: 11 }, "1")],
-            type_parameters: &[]
+            type_parameters: vec![in &bump]
         }
     );
 
@@ -55,7 +55,7 @@ fn fib_test() {
             with_type: None,
             params: vec![in &bump; Expr::number(SourcePosition {line: 3, symbol: 7}, "1")],
             body: vec![in &bump; Expr::number(SourcePosition { line: 3, symbol: 11 }, "1")],
-            type_parameters: &[]
+            type_parameters: vec![in &bump]
         }
     );
 
@@ -64,7 +64,6 @@ fn fib_test() {
         AstInner::Function {
             name: "fib",
             with_type: None,
-            type_parameters: &[],
             ..
         }
     ));
@@ -88,7 +87,7 @@ fn template_test() {
                 params: vec![in &bump; Type::Plain("T")],
                 returns: Box::new_in(Type::Plain("T"), &bump),
             },
-            type_parameters: &[Type::Plain("T")]
+            type_parameters: vec![in &bump; Type::Plain("T")]
         }
     );
 
@@ -99,7 +98,7 @@ fn template_test() {
             with_type: None,
             params: vec![in &bump; Expr::identifier(SourcePosition { line: 1, symbol: 14 }, "t")],
             body: vec![in &bump; Expr::identifier(SourcePosition { line: 1, symbol: 18 }, "t")],
-            type_parameters: &[Type::Plain("T")]
+            type_parameters: vec![in &bump; Type::Plain("T")]
         }
     );
 }

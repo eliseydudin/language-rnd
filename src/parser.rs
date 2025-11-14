@@ -35,7 +35,7 @@ pub enum Type<'src, 'bump> {
     // (0, 1, 2)
     Tuple(Vec<'bump, Self>),
     // Ty<A, B, C>
-    WithTypeParams(&'src str, &'bump [Type<'src, 'bump>]),
+    WithTypeParams(&'src str, Vec<'bump, Type<'src, 'bump>>),
 }
 
 impl From<TokenRepr> for Operator {
@@ -659,7 +659,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
     fn parse_identifier_or_call(
         &mut self,
         start: Expr<'src, 'bump>,
-        type_params: Option<&'bump [Type<'src, 'bump>]>,
+        type_params: Option<Vec<'bump, Type<'src, 'bump>>>,
     ) -> ParserResult<'src, Expr<'src, 'bump>> {
         self.advance().ok_or_else(|| self.eof_error())?;
         let next = self.peek().ok_or_else(|| self.eof_error())?;
@@ -727,14 +727,13 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         }
     }
 
-    fn parse_type_params(&mut self) -> ParserResult<'src, &'bump [Type<'src, 'bump>]> {
+    fn parse_type_params(&mut self) -> ParserResult<'src, Vec<'bump, Type<'src, 'bump>>> {
         self.parse_tuple_with(
             TokenRepr::LAngle,
             Self::parse_type,
             TokenRepr::Coma,
             TokenRepr::RAngle,
         )
-        .map(|a| a.into_bump_slice())
     }
 
     fn parse_tuple_with<T, F>(
@@ -780,10 +779,10 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         let begin = self.consume(TokenRepr::Fn)?;
         let name = self.consume(TokenRepr::Identifier)?;
 
-        let type_parameters: &[Type<'src, 'bump>] = if self.check(TokenRepr::LAngle) {
+        let type_parameters = if self.check(TokenRepr::LAngle) {
             self.parse_type_params()?
         } else {
-            &[]
+            vec![in self.bump]
         };
 
         if self.check(TokenRepr::LParen) {
@@ -832,7 +831,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         let type_parameters = if self.check(TokenRepr::LAngle) {
             self.parse_type_params()?
         } else {
-            &[]
+            vec![in self.bump]
         };
 
         self.consume(TokenRepr::Set)?;
@@ -918,7 +917,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         let type_parameters = if self.check(TokenRepr::LAngle) {
             self.parse_type_params()?
         } else {
-            &[]
+            vec![in self.bump]
         };
 
         self.consume(TokenRepr::Set)?;
@@ -1015,7 +1014,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
         let type_parameters = if self.check(TokenRepr::LAngle) {
             self.parse_type_params()?
         } else {
-            &[]
+            vec![in self.bump]
         };
 
         let variants = self.parse_tuple_with(
@@ -1045,23 +1044,23 @@ pub enum AstInner<'src, 'bump> {
     FunctionPrototype {
         name: &'src str,
         type_of: Type<'src, 'bump>,
-        type_parameters: &'bump [Type<'src, 'bump>],
+        type_parameters: Vec<'bump, Type<'src, 'bump>>,
     },
     Function {
         name: &'src str,
         with_type: Option<Type<'src, 'bump>>,
         params: Vec<'bump, Expr<'src, 'bump>>,
         body: Vec<'bump, Expr<'src, 'bump>>,
-        type_parameters: &'bump [Type<'src, 'bump>],
+        type_parameters: Vec<'bump, Type<'src, 'bump>>,
     },
     Alias {
         name: &'src str,
-        type_parameters: &'bump [Type<'src, 'bump>],
+        type_parameters: Vec<'bump, Type<'src, 'bump>>,
         aliasing: Type<'src, 'bump>,
     },
     Type {
         name: &'src str,
-        type_parameters: &'bump [Type<'src, 'bump>],
+        type_parameters: Vec<'bump, Type<'src, 'bump>>,
         fields: Option<Vec<'bump, (&'src str, Type<'src, 'bump>)>>,
     },
     Trait {
@@ -1071,7 +1070,7 @@ pub enum AstInner<'src, 'bump> {
     },
     Data {
         name: &'src str,
-        type_parameters: &'bump [Type<'src, 'bump>],
+        type_parameters: Vec<'bump, Type<'src, 'bump>>,
         variants: Vec<'bump, (&'src str, Option<Type<'src, 'bump>>)>,
     },
 }
