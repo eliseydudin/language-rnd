@@ -857,6 +857,7 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             TokenRepr::Alias,
             TokenRepr::Type,
             TokenRepr::Trait,
+            TokenRepr::Data,
         ];
 
         loop {
@@ -991,6 +992,48 @@ impl<'src, 'bump: 'src> Parser<'src, 'bump> {
             },
         })
     }
+
+    fn parse_data_variants(
+        &mut self,
+    ) -> ParserResult<'src, (&'src str, Option<Type<'src, 'bump>>)> {
+        let name = self.consume(TokenRepr::Identifier)?;
+
+        let ty = if self.check(TokenRepr::LParen) {
+            let tuple = self.parse_type_tuple()?;
+            Some(Type::Tuple(tuple))
+        } else {
+            None
+        };
+
+        Ok((name.data, ty))
+    }
+
+    pub fn parse_data(&mut self) -> ParserResult<'src, Ast<'src, 'bump>> {
+        let start = self.consume(TokenRepr::Data)?;
+        let name = self.consume(TokenRepr::Identifier)?;
+
+        let type_parameters = if self.check(TokenRepr::LAngle) {
+            self.parse_type_params()?
+        } else {
+            &[]
+        };
+
+        let variants = self.parse_tuple_with(
+            TokenRepr::Set,
+            Self::parse_data_variants,
+            TokenRepr::BitOr,
+            TokenRepr::Semicolon,
+        )?;
+
+        Ok(Ast {
+            pos: start.pos,
+            inner: AstInner::Data {
+                name: name.data,
+                type_parameters,
+                variants,
+            },
+        })
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -1026,6 +1069,11 @@ pub enum AstInner<'src, 'bump> {
         with: Vec<'bump, Type<'src, 'bump>>,
         prototypes: Vec<'bump, Ast<'src, 'bump>>,
     },
+    Data {
+        name: &'src str,
+        type_parameters: &'bump [Type<'src, 'bump>],
+        variants: Vec<'bump, (&'src str, Option<Type<'src, 'bump>>)>,
+    },
 }
 
 #[derive(Debug, PartialEq)]
@@ -1045,6 +1093,7 @@ impl<'src, 'bump: 'src> Iterator for Parser<'src, 'bump> {
             TokenRepr::Alias => Some(self.parse_alias()),
             TokenRepr::Type => Some(self.parse_type_decl()),
             TokenRepr::Trait => Some(self.parse_trait()),
+            TokenRepr::Data => Some(self.parse_data()),
             _ => {
                 let error = error!(
                     prev,

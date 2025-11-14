@@ -291,6 +291,28 @@ fn print_ast(tree: &mut TreeBuilder, a: ParserResult<Ast>) {
 
                 tree.end_child().end_child();
             }
+            AstInner::Data {
+                name,
+                type_parameters,
+                variants,
+            } => {
+                tree.begin_child(format!("data `{name}`"))
+                    .add_empty_child(format!("type params {type_parameters:?}"))
+                    .begin_child("variants".to_owned());
+                for variant in variants {
+                    match variant.1 {
+                        Some(ty) => {
+                            tree.begin_child(format!("variant `{}`", variant.0));
+                            print_type(tree, &ty);
+                            tree.end_child();
+                        }
+                        None => {
+                            tree.add_empty_child(format!("variant `{}`", variant.0));
+                        }
+                    }
+                }
+                tree.end_child().end_child();
+            }
         },
         Err(e) => {
             tree.begin_child("error".to_owned())
@@ -323,7 +345,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             _ => true,
         })
         .collect::<Result<Vec<String>, IoErr>>()?
-        .join("\n");
+        .join("\n")
+        + "\n";
 
     println!();
 

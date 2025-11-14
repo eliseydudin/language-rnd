@@ -27,6 +27,7 @@ pub struct SourcePosition {
     pub symbol: usize,
 }
 
+#[derive(Clone)]
 pub struct WithPos<T> {
     pub inner: T,
     pub pos: SourcePosition,
@@ -140,6 +141,9 @@ pub enum TokenRepr {
     Data,
 
     Elipsis,
+
+    BitOr,
+    BitAnd,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -354,6 +358,8 @@ impl<'a> Lexer<'a> {
             b'-' => self.small_token_or(TokenRepr::Minus, b'>', TokenRepr::Arrow),
             b'*' => self.small_token(TokenRepr::Mult, 1),
             b'$' => self.small_token(TokenRepr::Pipe, 1),
+            b'|' => self.small_token(TokenRepr::BitOr, 1),
+            b'&' => self.small_token(TokenRepr::BitAnd, 1),
             b'/' => {
                 if self.current() == Some(b'/') {
                     self.advance();
@@ -407,21 +413,30 @@ impl<'a> Lexer<'a> {
 
         self.small_token(ty, 1)
     }
+
+    pub fn next_token(&mut self, next: u8) -> Result<Token<'a>, LexerError> {
+        match next {
+            b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.lex_identifier(),
+            b'0'..=b'9' => self.lex_number(),
+            b'"' => self.lex_string(),
+            f => self.lex_fallback(f),
+        }
+        .map(Token::try_convert_to_keyword)
+    }
 }
 
 impl<'a> Iterator for Lexer<'a> {
     type Item = Result<Token<'a>, LexerError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let next = self.skip_whitespace()?;
-        Some(
-            match next {
-                b'a'..=b'z' | b'A'..=b'Z' | b'_' => self.lex_identifier(),
-                b'0'..=b'9' => self.lex_number(),
-                b'"' => self.lex_string(),
-                f => self.lex_fallback(f),
+        loop {
+            let next = self.skip_whitespace()?;
+            let next = self.next_token(next);
+            if next.clone().is_ok_and(|tok| tok.repr == TokenRepr::Comment) {
+                continue;
+            } else {
+                break Some(next);
             }
-            .map(Token::try_convert_to_keyword),
-        )
+        }
     }
 }
